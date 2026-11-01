@@ -74,7 +74,7 @@ flowchart LR
 
 ### 使用发布包安装
 
-从本仓库 GitHub Releases 的附件中获取 `dsh-persona-memory-0.8.4-alpha.1.tgz`。若维护者尚未提供附件，可按下文从源码构建。目前尚未公开发布 npm 包。
+直接下载 [dsh-persona-memory-0.8.4-alpha.1.tgz](https://github.com/wuxingyu1231z/dsh-persona-memory/releases/download/v0.8.4-alpha.1/dsh-persona-memory-0.8.4-alpha.1.tgz)，或前往 [GitHub Releases](https://github.com/wuxingyu1231z/dsh-persona-memory/releases) 查看发布说明和校验文件。目前尚未公开发布 npm 包。
 
 **Desktop：**打开桌面应用的“插件”安装入口，填写 `.tgz` 文件的绝对路径，完成后完全退出并重新启动应用。
 

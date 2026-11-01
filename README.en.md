@@ -74,7 +74,7 @@ There are no install-time scripts. Normal use does not require a separate databa
 
 ### Install a release archive
 
-Download `dsh-persona-memory-0.8.4-alpha.1.tgz` from the assets of this repository’s GitHub Releases, when provided by the maintainer. If no asset is available yet, build from source below. The package has not been publicly published to npm.
+Download [dsh-persona-memory-0.8.4-alpha.1.tgz](https://github.com/wuxingyu1231z/dsh-persona-memory/releases/download/v0.8.4-alpha.1/dsh-persona-memory-0.8.4-alpha.1.tgz) directly, or visit [GitHub Releases](https://github.com/wuxingyu1231z/dsh-persona-memory/releases) for release notes and checksums. The package has not been publicly published to npm.
 
 **Desktop:** open the application’s Plugins installer, enter the absolute path to the `.tgz`, then fully quit and restart the application.
 
