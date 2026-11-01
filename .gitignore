@@ -1,0 +1,15 @@
+node_modules/
+lib/
+releases/
+.test-output/
+*.tsbuildinfo
+.local-harness.json
+.installed-runtime.json
+.compat-deps.json
+processed-imports/
+/memory/
+/.dsh/
+.env
+.env.*
+!.env.example
+/docs/CSDN.zh-CN.md

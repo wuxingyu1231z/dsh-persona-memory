@@ -1,0 +1,10 @@
+# 合并到现有 profile patch，不要覆盖其中的其他插件配置。
+- id: persona-memory
+  config:
+    memoryDir: 'D:/my-private-memory'
+    defaultPersona: research-mentor
+    maxContextChars: 12000
+    recallLimit: 8
+    lockWaitMs: 5000
+    lockStaleMs: 30000
+    learningMode: auto

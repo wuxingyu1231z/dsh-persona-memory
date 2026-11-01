@@ -1,0 +1,15 @@
+# 将这些字段合并到既有 persona-memory 配置，保留现有 memoryDir、校验等设置。
+# 先自行准备嵌入服务和模型；插件不会下载模型。
+- id: persona-memory
+  config:
+    embedding:
+      provider: ollama
+      endpoint: http://127.0.0.1:11434/api/embed
+      model: embeddinggemma
+      timeoutMs: 10000
+      minSimilarity: 0.25
+      batchSize: 16
+# 兼容 embeddings 接口时：provider: openai-compatible
+# endpoint 填完整接口地址，例如 http://127.0.0.1:1234/v1/embeddings
+# model 填服务实际提供的模型名。
+# 若服务需要密钥，增加 apiKeyEnv: PERSONA_EMBED_API_KEY，并在 Host 环境设置该变量。

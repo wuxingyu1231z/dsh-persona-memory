@@ -1,0 +1,9 @@
+- insert:
+    - id: persona-memory
+      name: dsh-persona-memory
+      config:
+        defaultPersona: research-mentor
+        maxContextChars: 12000
+        recallLimit: 8
+        lockWaitMs: 5000
+        learningMode: auto

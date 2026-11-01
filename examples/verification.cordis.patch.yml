@@ -1,0 +1,19 @@
+# 合并配置时同时保留现有 memoryDir 等字段；项目脚本由用户按实际情况设置。
+- id: persona-memory
+  config:
+    defaultPersona: research-mentor
+    learningMode: auto
+    maxContextChars: 12000
+    recallLimit: 8
+    lockWaitMs: 5000
+    lockStaleMs: 30000
+    verificationChecks:
+      - id: unit-tests
+        label: 单元测试
+        tool: bash
+        arguments:
+          command: npm test
+          description: Run the configured project unit tests
+        exitCodeField: exitCode
+# 若仅对特定项目适用，增加 projectId，使用界面快照中的当前项目标识。
+# 不支持 bash 的部署可换成已注册的相应工具及其参数。
