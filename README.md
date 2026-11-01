@@ -74,27 +74,27 @@ flowchart LR
 
 ### 使用发布包安装
 
-从本仓库 GitHub Releases 的附件中获取 `dsh-persona-memory-0.8.3-alpha.1.tgz`。若维护者尚未提供附件，可按下文从源码构建。目前尚未公开发布 npm 包。
+从本仓库 GitHub Releases 的附件中获取 `dsh-persona-memory-0.8.4-alpha.1.tgz`。若维护者尚未提供附件，可按下文从源码构建。目前尚未公开发布 npm 包。
 
 **Desktop：**打开桌面应用的“插件”安装入口，填写 `.tgz` 文件的绝对路径，完成后完全退出并重新启动应用。
 
 **Web：**在运行 Harness Host 的机器上执行：
 
 ```bash
-dsh --profile web plugin add "/absolute/path/dsh-persona-memory-0.8.3-alpha.1.tgz"
+dsh --profile web plugin add "/absolute/path/dsh-persona-memory-0.8.4-alpha.1.tgz"
 ```
 
-也可以使用 Web 的“插件”安装入口。将示例替换为实际绝对路径；Windows 可使用 `C:/Downloads/dsh-persona-memory-0.8.3-alpha.1.tgz`。远程 Web 部署的安装路径指向 **Host 机器**，不是浏览器所在电脑。
+也可以使用 Web 的“插件”安装入口。将示例替换为实际绝对路径；Windows 可使用 `C:/Downloads/dsh-persona-memory-0.8.4-alpha.1.tgz`。远程 Web 部署的安装路径指向 **Host 机器**，不是浏览器所在电脑。
 
 如果通过 Harness 源码启动应用，可在 Harness 仓库中将 `dsh` 替换为 `pnpm dsh`。Web 与 Desktop 使用不同的 profile，需要分别安装。更多方式见[安装与分发说明](docs/DISTRIBUTION.md)。
 
 ### 从旧版升级
 
-安装 `0.8.3-alpha.1` 后，rc.3、rc.4、rc.5 使用同一个插件包；升级到后续 0.2.x 时也不会因版本号变化被直接拦截。安装后完全退出并重启 Harness。插件继续使用原来的 memory 目录；若插件页要求先卸载旧版，请保留本地数据。
+安装 `0.8.4-alpha.1` 后，rc.3、rc.4、rc.5 使用同一个插件包；升级到后续 0.2.x 时也不会因版本号变化被直接拦截。安装后完全退出并重启 Harness。插件继续使用原来的 memory 目录；若插件页要求先卸载旧版，请保留本地数据。
 
 | 插件版本 | 支持的 DSH |
 | --- | --- |
-| **`0.8.3-alpha.1`** | **`>=0.2.1-rc.3 <0.3.0-0`** |
+| **`0.8.4-alpha.1`** | **`>=0.2.1-rc.3 <0.3.0-0`** |
 
 开发接口固定在最低支持版本 rc.3；发布构建保持一份，并在 rc.3 / rc.4 / rc.5 上分别运行回归。启动时检查必要接口，遇到缺失能力会给出具体提示。范围内的未来版本允许安装，但尚未发布的版本无法预先保证行为；DSH 0.3.x 及以上需要另行适配。无需开启版本豁免。
 
@@ -108,7 +108,7 @@ npm run check
 npm pack --ignore-scripts --pack-destination releases
 ```
 
-安装生成的 `releases/dsh-persona-memory-0.8.3-alpha.1.tgz`，方式同上。源码仓库中的 `lib/` 和 `releases/` 不纳入 Git；直接安装本地目录前也必须先完成构建。未构建的 Git 仓库地址不能直接作为当前插件的安装包使用。
+安装生成的 `releases/dsh-persona-memory-0.8.4-alpha.1.tgz`，方式同上。源码仓库中的 `lib/` 和 `releases/` 不纳入 Git；直接安装本地目录前也必须先完成构建。未构建的 Git 仓库地址不能直接作为当前插件的安装包使用。
 
 ## 使用
 
@@ -162,6 +162,8 @@ flowchart LR
 3. 导入完成后，浏览对话与分支；选择已经配置的模型，点击“提取当前分支”或“提取所选分支”。这是开始调用模型的步骤。
 4. 查看摘要及提取依据，将结果应用到目标人格，或编辑草稿后创建新人格。可靠记忆直接保存，无需逐条确认。
 5. 选择历史上下文模式与“续聊工作区”，点击“新建对话并续聊”。新会话打开后，输入下一句话即可继续。
+
+分支较多的单个会话会自动拆批处理，保留各分支完整前文、原始标识和选中分支；全部处理完成后仍保存为一个归档，无需手动拆分文件。
 
 **整包导入不需要勾选会话。**导入后的批量勾选仅控制本次记忆分析，单次最多分析 32 个分支。续聊一次对应一个分支，不将不同分支拼接成虚构对话。
 
@@ -268,7 +270,7 @@ npm run check:installed
 
 多版本回归可执行 `npm run check:compat`，默认验证 rc.3 / rc.4 / rc.5 的同一构建，准备方式见[兼容性说明](docs/COMPATIBILITY.md)。开发依赖精确版本用于复现测试，安装兼容范围由 `engines.dsh` 和宿主 peers 声明。
 
-发布前先构建并生成 `.tgz`，再运行 `node scripts/smoke-install.mjs` 验证独立测试 profile 的安装。`--upgrade` 还需要本地 `releases/` 中的 `0.8.1-alpha.1` 包及 DSH rc.3 测试副本，用于验证宿主与插件一起升级；旧运行时可通过 `PERSONA_UPGRADE_RUNTIME` 指定。详细边界见[验证记录](VALIDATION.md)与[兼容性说明](docs/COMPATIBILITY.md)。
+发布前先构建并生成 `.tgz`，再运行 `node scripts/smoke-install.mjs` 验证独立测试 profile 的安装。`--upgrade` 还需要本地 `releases/` 中的 `0.8.3-alpha.1` 包及 DSH rc.3 测试副本，用于验证宿主与插件一起升级；旧运行时可通过 `PERSONA_UPGRADE_RUNTIME` 指定。详细边界见[验证记录](VALIDATION.md)与[兼容性说明](docs/COMPATIBILITY.md)。
 
 ## 后续计划
 

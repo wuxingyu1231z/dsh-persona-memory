@@ -1,4 +1,5 @@
 /** Browser/CLI shared, local-only preprocessing. Visible text and graph identities are preserved. */
+import { branchSelection, type BranchSelection } from './import-branches.ts'
 export interface PreparedConversation {
   id: string; title: string; sourceId: string; text: string; format: 'json' | 'markdown';
   messages: number; branches: number; characters: number; warnings: string[]
@@ -68,6 +69,7 @@ export function preprocessHistory(filename: string, input: string): PreparedHist
       }
       const normalized: Obj = { ...(conversation.id !== undefined || conversation.conversation_id !== undefined ? { id: String(conversation.id ?? conversation.conversation_id).slice(0, 300) } : {}), title }
       let messages = 0, branches = 1
+      let selected: BranchSelection | undefined
       if (conversation.mapping) {
         const source = object(conversation.mapping); if (!source) throw new Error('mapping 不是对象')
         const keys = Object.keys(source); totalNodes += keys.length
@@ -88,9 +90,9 @@ export function preprocessHistory(filename: string, input: string): PreparedHist
         }
         const current = conversation.current_node === null || conversation.current_node === undefined ? null : String(conversation.current_node)
         if (current !== null && !Object.hasOwn(cleaned, current)) throw new Error('current_node 指向无效节点')
-        const tips = [...new Set([...(current !== null ? [current] : []), ...keys.filter(k => !parents.has(k))])]
+        selected = branchSelection(prior?.branchSelection, cleaned)
+        const tips = selected?.tips ?? [...new Set([...(current !== null ? [current] : []), ...keys.filter(k => !parents.has(k))])]
         branches = tips.filter(tip => { let at: string | null = tip; while (at !== null) { if (cleaned[at].message) return true; at = cleaned[at].parent as string | null }; return false }).length
-        if (branches > 16) warnings.add('该会话超过 16 个分支，需进一步按分支拆分后导入。')
         normalized.mapping = cleaned; if (current !== null) normalized.current_node = current
       } else {
         const source = conversation.messages ?? conversation.chat_messages
@@ -101,7 +103,7 @@ export function preprocessHistory(filename: string, input: string): PreparedHist
         messages = (normalized.messages as Obj[]).length
       }
       if (!messages || !branches) throw new Error('没有可见用户/助手正文')
-      normalized.personaMemoryPreprocessing = { version: 1, warnings: [...warnings] }
+      normalized.personaMemoryPreprocessing = { version: 1, warnings: [...warnings], ...(selected ? { branchSelection: selected } : {}) }
       const output = JSON.stringify(normalized)
       result.preparedCharacters += output.length
       result.conversations.push({ id: `local-${index}`, title, sourceId: String(normalized.id ?? ''), text: output, format: 'json', messages, branches, characters: output.length, warnings: [...warnings] })
@@ -111,10 +113,74 @@ export function preprocessHistory(filename: string, input: string): PreparedHist
   return result
 }
 
-function serializeGroup(prepared: PreparedConversation[]): { text: string; format: 'json' | 'markdown' } {
+interface TransportConversation extends PreparedConversation { expandedMessages: number; expandedCharacters: number }
+const maxPartCharacters = 4000000, maxExpandedCharacters = 7500000, maxMessages = 20000
+
+function messageSize(message: Obj, fallbackId: string): number {
+  const text = Array.isArray(message.fragments) ? message.fragments.map(f => String(object(f)?.content ?? '')).join('\n\n') : String(message.content ?? '')
+  return JSON.stringify({ id: String(message.id ?? fallbackId).slice(0, 300), role: 'assistant', text, at: 0 }).length + 64
+}
+
+/** Split transport records, never the dialogue text or its original branch identities. */
+function splitBranches(conversation: PreparedConversation): TransportConversation[] {
+  const basic = { ...conversation, expandedMessages: conversation.messages, expandedCharacters: conversation.characters + conversation.messages * 400 + 12000 }
+  if (conversation.format !== 'json') return [basic]
+  const raw = JSON.parse(conversation.text) as Obj, mapping = object(raw.mapping)
+  if (!mapping) return [basic]
+  const prior = object(raw.personaMemoryPreprocessing)
+  const selection = branchSelection(prior?.branchSelection, mapping)
+  const keys = Object.keys(mapping), parents = new Set(keys.flatMap(key => { const parent = object(mapping[key])!.parent; return parent === null ? [] : [String(parent)] }))
+  const leaves = keys.filter(key => !parents.has(key))
+  const current = raw.current_node === undefined || raw.current_node === null ? null : String(raw.current_node)
+  const preferred = selection ? selection.preferred : current ?? leaves[0] ?? null
+  const tips = selection?.tips ?? [...new Set([...(current !== null ? [current] : []), ...leaves])]
+  const costs = new Map<string, { messages: number; characters: number }>()
+  function cost(tip: string): { messages: number; characters: number } {
+    const path: string[] = []; let at: string | null = tip
+    while (at !== null && !costs.has(at)) { path.push(at); at = object(mapping![at])!.parent as string | null }
+    let value = at === null ? { messages: 0, characters: 0 } : costs.get(at)!
+    for (const id of path.reverse()) {
+      const message = object(object(mapping![id])!.message)
+      value = { messages: value.messages + (message ? 1 : 0), characters: value.characters + (message ? messageSize(message, id) : 0) }
+      costs.set(id, value)
+    }
+    return value
+  }
+  const visible = tips.filter(tip => cost(tip).messages > 0)
+  function fragment(chosen: string[]): TransportConversation {
+    // Named exports can be pruned to the exact ancestor closure. Anonymous exports retain
+    // their original graph so the Host can reproduce their existing content-derived identity.
+    let subset = mapping!
+    if (raw.id !== undefined || raw.conversation_id !== undefined) {
+      const included = new Set<string>()
+      for (const tip of chosen) { let at: string | null = tip; while (at !== null && !included.has(at)) { included.add(at); at = object(mapping![at])!.parent as string | null } }
+      subset = Object.fromEntries(keys.filter(key => included.has(key)).map(key => [key, mapping![key]]))
+    }
+    const sliced: Obj = { ...raw, mapping: subset, personaMemoryPreprocessing: { ...prior, branchSelection: { tips: chosen, preferred } } }
+    if (current !== null && !Object.hasOwn(subset, current)) delete sliced.current_node
+    const text = JSON.stringify(sliced)
+    return { ...conversation, text, characters: text.length, branches: chosen.length,
+      expandedMessages: chosen.reduce((n, tip) => n + cost(tip).messages, 0),
+      expandedCharacters: chosen.reduce((n, tip) => n + cost(tip).characters + 12000, 0) }
+  }
+  const fits = (record: TransportConversation) => record.branches <= 16 && record.characters <= maxPartCharacters && record.expandedMessages <= maxMessages && record.expandedCharacters <= maxExpandedCharacters
+  const whole = { ...basic, expandedMessages: visible.reduce((n, tip) => n + cost(tip).messages, 0), expandedCharacters: visible.reduce((n, tip) => n + cost(tip).characters + 12000, 0) }
+  if (tips.length === visible.length && fits(whole)) return [whole]
+  const records: TransportConversation[] = []; let chosen: string[] = [], candidate: TransportConversation | undefined
+  for (const tip of visible) {
+    const next = fragment([...chosen, tip])
+    if (chosen.length && !fits(next)) { records.push(candidate!); chosen = []; candidate = undefined }
+    chosen.push(tip); candidate = chosen.length === 1 ? fragment(chosen) : next
+    if (!fits(candidate)) throw new Error('单个分支的完整正文超过单片容量，请减少导出内容；不会截断正文。')
+  }
+  if (candidate) records.push(candidate)
+  return records
+}
+
+function serializeGroup(prepared: TransportConversation[]): { text: string; format: 'json' | 'markdown' } {
   if (!prepared.length || prepared.length > 32) throw new Error('自动分片需包含 1 至 32 个会话')
   if (prepared.reduce((n, c) => n + c.branches, 0) > 128) throw new Error('自动分片的分支数量超过上限')
-  if (prepared.some(c => c.branches > 16)) throw new Error('单会话分支超过上限，请先拆分分支')
+  if (prepared.some(c => c.branches > 16)) throw new Error('自动分支分片超过上限')
   if (prepared.some(c => c.format === 'markdown') && prepared.length > 1) throw new Error('Markdown 请逐个导入')
   const text = prepared.length === 1 ? prepared[0].text : `[${prepared.map(c => c.text).join(',')}]`
   if (text.length > 4000000) throw new Error('单个超长对话超过 400 万字符，需先按完整轮次拆分。')
@@ -125,15 +191,18 @@ function serializeGroup(prepared: PreparedConversation[]): { text: string; forma
 export function historyParts(history: PreparedHistory): { text: string; format: 'json' | 'markdown' }[] {
   if (history.skipped.length) throw new Error(`${history.skipped.length} 个会话无法处理，整包未导入：${history.skipped.slice(0, 3).map(s => `${s.title}：${s.reason}`).join('；')}`)
   if (history.conversations.reduce((n, c) => n + c.branches, 0) > 10000) throw new Error('整包超过 10,000 个分支，请先拆分导出。')
-  const parts: { text: string; format: 'json' | 'markdown' }[] = [], current: PreparedConversation[] = []
-  for (const conversation of history.conversations) {
+  const parts: { text: string; format: 'json' | 'markdown' }[] = [], current: TransportConversation[] = []
+  for (const conversation of history.conversations.flatMap(splitBranches)) {
     serializeGroup([conversation])
     const size = current.reduce((n, c) => n + c.characters + 1, 2)
-    if (current.length && (current.length >= 32 || size + conversation.characters > 2000000 || current.reduce((n, c) => n + c.branches, 0) + conversation.branches > 128)) {
+    if (current.length && (current.length >= 32 || size + conversation.characters > 2000000 || current.reduce((n, c) => n + c.branches, 0) + conversation.branches > 128
+      || current.reduce((n, c) => n + c.expandedMessages, 0) + conversation.expandedMessages > maxMessages
+      || current.reduce((n, c) => n + c.expandedCharacters, 0) + conversation.expandedCharacters > maxExpandedCharacters)) {
       parts.push(serializeGroup(current)); current.length = 0
     }
     current.push(conversation)
   }
   if (current.length) parts.push(serializeGroup(current))
+  if (parts.length > 1024) throw new Error('自动拆分超过 1024 个传输分片，请减少本次导出内容。')
   return parts
 }

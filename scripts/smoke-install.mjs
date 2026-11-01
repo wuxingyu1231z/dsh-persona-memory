@@ -26,10 +26,11 @@ async function install(filename, targetRuntime = runtime) {
 ], { command: node, args: [pnpm], env, execution: 'service', outputBytes: 32000, lookupTimeoutMs: 30000, idleTimeoutMs: 60000, signal: AbortSignal.timeout(180000), onOutput: (text, kind) => process[kind].write(text) })
 }
 const upgrade = process.argv.includes('--upgrade')
-const upgradeFrom = '0.8.1-alpha.1'
+const upgradeFrom = process.env.PERSONA_UPGRADE_FROM ?? '0.8.3-alpha.1'
 const upgradeHost = '0.2.1-rc.3'
 const memoryRoot = join(home, 'memory')
 let legacy
+let oldPluginRejectedByNewHost = false
 const storeEntry = () => realpath(join(profile, 'node_modules', pkg.name, 'lib/store.js'))
 if (upgrade) {
   // Reproduce the user upgrading DSH as well as the plugin, without bypassing either host's guards.
@@ -38,7 +39,8 @@ if (upgrade) {
   const old = await install(join(project, 'releases', `${pkg.name}-${upgradeFrom}.tgz`), previousRuntime); assert.equal(old.exitCode, 0, old.output)
   const previousManifest = JSON.parse(await readFile(join(profile, 'node_modules', pkg.name, 'package.json'), 'utf8'))
   const rejection = boot.evaluatePluginCompatibility(previousManifest, {}, version)
-  if (version !== upgradeHost) { assert.ok(rejection, 'new host must reproduce the old plugin compatibility rejection'); assert.equal(rejection.exempted, false) }
+  oldPluginRejectedByNewHost = !acceptsRuntime(previousManifest, version)
+  if (oldPluginRejectedByNewHost) { assert.ok(rejection, 'new host must reproduce the old plugin compatibility rejection'); assert.equal(rejection.exempted, false) }
   else assert.equal(rejection, undefined)
   const { MemoryStore } = await import(pathToFileURL(await storeEntry()).href)
   const store = new MemoryStore(memoryRoot); await store.initialize()
@@ -75,7 +77,7 @@ if (legacy) {
 const { stdout } = await exec(node, [join(runtime, 'node_modules/@deepseek-ai/dsh/lib/bin.js'), '--profile', 'web', '--dump-config'], { cwd: project, env, maxBuffer: 8 * 1024 * 1024, timeout: 30000, windowsHide: true })
 assert.ok(stdout.includes('dsh-persona-memory') && stdout.includes('persona-memory'))
 await writeFile(join(home, 'composed.yml'), stdout)
-const report = JSON.stringify({ version: pkg.version, dsh: version, transaction: 'passed', compatibility: 'passed', exemptions: {}, profileComposition: 'passed', ...(upgrade ? { upgradeFrom, upgradeHost, oldPluginRejectedByNewHost: version !== upgradeHost, memoryPreservation: 'passed' } : {}), home, logPath: result.logPath, userProfileModified: false }, null, 2) + '\n'
+const report = JSON.stringify({ version: pkg.version, dsh: version, transaction: 'passed', compatibility: 'passed', exemptions: {}, profileComposition: 'passed', ...(upgrade ? { upgradeFrom, upgradeHost, oldPluginRejectedByNewHost, memoryPreservation: 'passed' } : {}), home, logPath: result.logPath, userProfileModified: false }, null, 2) + '\n'
 await writeFile(join(base, `installed-transaction-report-${version}.json`), report)
 await writeFile(join(base, 'installed-transaction-report.json'), report)
 console.log('Actual DSH installation transaction and profile composition passed in an isolated home. No version exemption; user profiles unchanged.')

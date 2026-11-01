@@ -1,6 +1,6 @@
 # 兼容范围与多版本验证
 
-当前发布 **0.8.3-alpha.1**，使用同一个包支持 DSH **`>=0.2.1-rc.3 <0.3.0-0`**，Cordis **`^4.0.5`**。rc.3、rc.4、rc.5 共用产物，范围内的后续 0.2.x 预发布版与正式版允许继续使用，不需要为每次宿主升级重新打包。
+当前发布 **0.8.4-alpha.1**，使用同一个包支持 DSH **`>=0.2.1-rc.3 <0.3.0-0`**，Cordis **`^4.0.5`**。rc.3、rc.4、rc.5 共用产物，范围内的后续 0.2.x 预发布版与正式版允许继续使用，不需要为每次宿主升级重新打包。
 
 ## 兼容策略
 
@@ -45,7 +45,7 @@ npm pack --ignore-scripts --pack-destination releases
 node scripts/smoke-install.mjs --upgrade
 ```
 
-该流程在独立 Web profile 中先用 rc.3 安装旧 0.8.1，写入测试人格、跨项目及项目记忆和会话选择，然后用所选宿主安装当前插件并重启核对数据。`PERSONA_TEST_RUNTIME_CONFIG` 可指定矩阵生成的运行时指针，`PERSONA_UPGRADE_RUNTIME` 可指定旧 rc.3 副本。每个宿主单独保存 `.test-output/installed-transaction-report-<version>.json`。无需版本豁免，不操作真实用户 profile。
+该流程在独立 Web profile 中先用 rc.3 安装旧 0.8.3，写入测试人格、跨项目及项目记忆和会话选择，然后用所选宿主安装当前插件并重启核对数据。`PERSONA_TEST_RUNTIME_CONFIG` 可指定矩阵生成的运行时指针，`PERSONA_UPGRADE_RUNTIME` 可指定旧 rc.3 副本。每个宿主单独保存 `.test-output/installed-transaction-report-<version>.json`。无需版本豁免，不操作真实用户 profile。
 
 ## 已有发布包
 
@@ -53,6 +53,6 @@ node scripts/smoke-install.mjs --upgrade
 | --- | --- |
 | 现有 0.7.2～0.8.1 包 | 精确 rc.3 |
 | 0.8.2-alpha.1 | 精确 rc.5 |
-| **0.8.3-alpha.1** | **rc.3 起的 0.2.x 范围** |
+| **0.8.4-alpha.1** | **rc.3 起的 0.2.x 范围** |
 
 安装新版后完全退出并重启应用。若插件页要求先卸载旧版，请保留 memory 目录。记忆布局继续为 2，已有 Markdown、索引与历史归档可沿用。旧版本验证过程见 [VALIDATION.md](../VALIDATION.md)。模型测试使用本地假适配器；功能矩阵不等同于真实 Desktop 窗口或真实模型质量验收。

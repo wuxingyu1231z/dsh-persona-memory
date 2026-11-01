@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { batchSchema, type ImportBatch, type ImportedConversation, type HistoryMessage } from './import-schema.ts'
+import { branchSelection } from './import-branches.ts'
 
 export const digest = (text: string) => createHash('sha256').update(text).digest('hex')
 type Obj = Record<string, unknown>
@@ -41,9 +42,15 @@ function makeConversation(sourceId: string, title: string, branchId: string, pla
 }
 function jsonConversation(raw: unknown, index: number, maxBranches: number): ImportedConversation[] {
   const c = obj(raw)
-  const sourceId = String(c.id ?? c.conversation_id ?? `anonymous-${digest(JSON.stringify(c)).slice(0, 24)}`).slice(0, 300)
-  const title = String(c.title ?? c.name ?? `对话 ${index + 1}`)
+  // The transport selection must not change anonymous conversation identities.
   const preprocessing = optionalObj(c.personaMemoryPreprocessing)
+  const identity = { ...c }
+  if (preprocessing?.branchSelection !== undefined) {
+    const { branchSelection: _, ...original } = preprocessing
+    identity.personaMemoryPreprocessing = original
+  }
+  const sourceId = String(c.id ?? c.conversation_id ?? `anonymous-${digest(JSON.stringify(identity)).slice(0, 24)}`).slice(0, 300)
+  const title = String(c.title ?? c.name ?? `对话 ${index + 1}`)
   const notes = preprocessing?.version === 1 && Array.isArray(preprocessing.warnings) ? preprocessing.warnings.filter((w): w is string => typeof w === 'string').slice(0, 16).map(w => w.slice(0, 300)) : []
   if (c.mapping) {
     const map = obj(c.mapping)
@@ -56,7 +63,8 @@ function jsonConversation(raw: unknown, index: number, maxBranches: number): Imp
     const leaves = keys.filter(k => !parents.has(k))
     const current = c.current_node === undefined || c.current_node === null ? undefined : String(c.current_node)
     if (current && !Object.hasOwn(map, current)) throw new Error('current_node 未指向有效节点')
-    const tips = [...new Set([...(current ? [current] : []), ...leaves])]
+    const selection = branchSelection(preprocessing?.branchSelection, map)
+    const tips = selection?.tips ?? [...new Set([...(current ? [current] : []), ...leaves])]
     if (!tips.length || tips.length > maxBranches) throw new Error('分支过多或对话图无有效末节点')
     // Visit every path, including disconnected cycles, before returning any branch.
     const valid = new Set<string>()
@@ -69,13 +77,14 @@ function jsonConversation(raw: unknown, index: number, maxBranches: number): Imp
       const path: string[] = []; let at: string | null = tip
       while (at !== null) { path.push(at); const parent: unknown = obj(map[at]).parent; at = parent === null || parent === undefined ? null : String(parent) }
       const warnings = new Set<string>(notes); let platform: ImportedConversation['platform'] = 'chatgpt'
+      if (selection) warnings.add('多分支会话已自动拆批导入，完整正文和原始分支标识已保留。')
       const messages = path.reverse().flatMap(id => {
         const node = obj(map[id]); const message = optionalObj(node.message); if (!message) return []
         if (Array.isArray(message.fragments)) platform = 'deepseek'
         const parsed = body(message, warnings); if (!parsed?.text.trim()) return []
         return [{ id: String(message.id ?? id).slice(0, 300), ...parsed, at: time(message.create_time ?? message.inserted_at ?? message.created_at) }]
       })
-      return messages.length ? [makeConversation(sourceId, title, tip, platform, tip === (current ?? leaves[0]), messages, warnings)] : []
+      return messages.length ? [makeConversation(sourceId, title, tip, platform, tip === (selection ? selection.preferred : current ?? leaves[0]), messages, warnings)] : []
     })
   }
   const list = c.messages ?? c.chat_messages

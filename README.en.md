@@ -74,27 +74,27 @@ There are no install-time scripts. Normal use does not require a separate databa
 
 ### Install a release archive
 
-Download `dsh-persona-memory-0.8.3-alpha.1.tgz` from the assets of this repository’s GitHub Releases, when provided by the maintainer. If no asset is available yet, build from source below. The package has not been publicly published to npm.
+Download `dsh-persona-memory-0.8.4-alpha.1.tgz` from the assets of this repository’s GitHub Releases, when provided by the maintainer. If no asset is available yet, build from source below. The package has not been publicly published to npm.
 
 **Desktop:** open the application’s Plugins installer, enter the absolute path to the `.tgz`, then fully quit and restart the application.
 
 **Web:** on the machine running the Harness Host, execute:
 
 ```bash
-dsh --profile web plugin add "/absolute/path/dsh-persona-memory-0.8.3-alpha.1.tgz"
+dsh --profile web plugin add "/absolute/path/dsh-persona-memory-0.8.4-alpha.1.tgz"
 ```
 
-The Web Plugins installer is also supported. Replace the example with the actual absolute path; Windows paths such as `C:/Downloads/dsh-persona-memory-0.8.3-alpha.1.tgz` work as well. In a remote Web deployment, the install path refers to the **Host machine**, not the browser’s computer.
+The Web Plugins installer is also supported. Replace the example with the actual absolute path; Windows paths such as `C:/Downloads/dsh-persona-memory-0.8.4-alpha.1.tgz` work as well. In a remote Web deployment, the install path refers to the **Host machine**, not the browser’s computer.
 
 When running Harness from source, use `pnpm dsh` from its repository instead of `dsh`. Web and Desktop use separate profiles and need separate installations. See the [installation and distribution guide](docs/DISTRIBUTION.md) for details; the extended guides are currently in Chinese.
 
 ### Upgrade from an earlier release
 
-Install `0.8.3-alpha.1` once for rc.3, rc.4, and rc.5. Later 0.2.x updates are also allowed without an exact-version installation block. Fully quit and restart Harness after installing. The existing memory directory is reused; if the installer requires removing the old plugin first, retain local data.
+Install `0.8.4-alpha.1` once for rc.3, rc.4, and rc.5. Later 0.2.x updates are also allowed without an exact-version installation block. Fully quit and restart Harness after installing. The existing memory directory is reused; if the installer requires removing the old plugin first, retain local data.
 
 | Plugin release | Supported DSH |
 | --- | --- |
-| **`0.8.3-alpha.1`** | **`>=0.2.1-rc.3 <0.3.0-0`** |
+| **`0.8.4-alpha.1`** | **`>=0.2.1-rc.3 <0.3.0-0`** |
 
 Development APIs stay pinned to the minimum supported rc.3 baseline. A single build is exercised on rc.3 / rc.4 / rc.5, and startup checks identify missing required interfaces. Future versions within the range are allowed to install, although unreleased behavior cannot be verified in advance. DSH 0.3.x and later need separate adaptation. No version exemption is required.
 
@@ -108,7 +108,7 @@ npm run check
 npm pack --ignore-scripts --pack-destination releases
 ```
 
-Install the resulting `releases/dsh-persona-memory-0.8.3-alpha.1.tgz` using the steps above. Generated `lib/` and `releases/` directories are not tracked in Git. Installing a local source directory also requires a build first; an unbuilt Git repository URL is not a supported installable artifact.
+Install the resulting `releases/dsh-persona-memory-0.8.4-alpha.1.tgz` using the steps above. Generated `lib/` and `releases/` directories are not tracked in Git. Installing a local source directory also requires a build first; an unbuilt Git repository URL is not a supported installable artifact.
 
 ## Usage
 
@@ -162,6 +162,8 @@ flowchart LR
 3. Browse the imported conversations and branches. Choose a configured model and select **Analyze current branch** or **Analyze selected branches**. This is where model calls begin.
 4. Review the summary and evidence. Apply the results to a persona, or edit the draft to create a new one. Reliable memories are saved directly, without per-item approval.
 5. Choose the history-context mode and **Workspace for the new chat**, then select **Create a chat and continue**. Once it opens, type your next message.
+
+A single conversation with many branches is automatically partitioned. Each branch keeps its full prefix, original identity, and preferred-branch status; all parts are committed as one archive without manually splitting the export.
 
 **Whole-file import requires no conversation selection.** Checkboxes after import control only that analysis batch, with up to 32 branches per batch; long histories may require multiple model requests. A continuation uses one branch, rather than stitching alternative branches into an invented conversation.
 
@@ -268,7 +270,7 @@ This path requires a readable Desktop installation archive. `check:installed` us
 
 Run `npm run check:compat` for regression checks of the same build on rc.3 / rc.4 / rc.5; see the [compatibility guide](docs/COMPATIBILITY.md) for fixture preparation. Exact development dependencies make tests reproducible; `engines.dsh` and host peer ranges govern installation compatibility.
 
-Before a release, build and pack the `.tgz`, then run `node scripts/smoke-install.mjs` to test installation in an isolated profile. The optional `--upgrade` check requires the local `0.8.1-alpha.1` archive in `releases/` and a DSH rc.3 test copy to verify upgrading both the host and plugin. Set `PERSONA_UPGRADE_RUNTIME` to specify the old runtime directory. See the [validation record](VALIDATION.md) and [compatibility guide](docs/COMPATIBILITY.md) for the tested scope.
+Before a release, build and pack the `.tgz`, then run `node scripts/smoke-install.mjs` to test installation in an isolated profile. The optional `--upgrade` check requires the local `0.8.3-alpha.1` archive in `releases/` and a DSH rc.3 test copy to verify upgrading both the host and plugin. Set `PERSONA_UPGRADE_RUNTIME` to specify the old runtime directory. See the [validation record](VALIDATION.md) and [compatibility guide](docs/COMPATIBILITY.md) for the tested scope.
 
 ## Roadmap
 

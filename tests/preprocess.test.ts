@@ -12,6 +12,14 @@ import { configSchema } from '../src/schema.ts'
 const source = { projectId: null }
 const signal = () => new AbortController().signal
 const chat = (n: number) => ({ id: `chat-${n}`, title: `Conversation ${n}`, messages: [{ id: `u-${n}`, role: 'user', content: `Question ${n}` }, { id: `a-${n}`, role: 'assistant', content: `Answer ${n}` }] })
+function branching(count: number, prefix = 1) {
+  const mapping: Record<string, { parent: string | null; message: unknown }> = { root: { parent: null, message: null } }
+  for (let i = 0; i < prefix; i++) mapping[`u-${i}`] = { parent: i ? `u-${i - 1}` : 'root', message: { id: `user-${i}`, role: 'user', content: `正文 ${i}\n\`\`\`js\nconst x = ${i}\n\`\`\``, create_time: 1700000000 + i } }
+  for (let i = 0; i < count; i++) mapping[`a-${i}`] = { parent: `u-${prefix - 1}`, message: { id: `answer-${i}`, fragments: [{ type: 'RESPONSE', content: `分支 ${i} 的完整回复` }], inserted_at: '2025-01-02T00:00:00Z' } }
+  return { id: 'many-branches', title: '多分支会话', current_node: `a-${count - 1}`, mapping }
+}
+const identities = (conversations: ReturnType<typeof parseHistory>['conversations']) => conversations.map(c => [c.id, c.sourceId, c.title, c.branchId, c.platform, c.preferred, c.messages])
+const fullLimits = { chars: 4000000, conversations: 1000, branches: 1000, messages: 100000 }
 async function fixture(t: { after(fn: () => Promise<void>): void }) {
   const base = join(process.cwd(), '.test-output'); await mkdir(base, { recursive: true }); const root = await mkdtemp(join(base, 'whole-import-'))
   t.after(() => { assert.ok(root.startsWith(base)); return rm(root, { recursive: true, force: true }) })
@@ -64,6 +72,99 @@ test('all conversations are automatically partitioned; invalid conversations pre
   assert.throws(() => historyParts(preprocessHistory('mixed.json', JSON.stringify([chat(1), { title: 'broken', mapping: { a: { parent: 'missing' } } }]))), /整包未导入.*broken/)
   assert.throws(() => preprocessHistory('user.json', '{"email":"unused"}'), /账户文件/)
   assert.throws(() => preprocessHistory('bad.json', JSON.stringify({ mapping: { a: { parent: 'a' } } })), /循环/)
+})
+
+test('one conversation with more than sixteen branches is split automatically without new branches or changing the preferred path', () => {
+  for (const current of ['a-72', 'u-0', null]) {
+    const raw = { ...branching(73), current_node: current }
+    const prepared = preprocessHistory('many.json', JSON.stringify(raw))
+    const expected = parseHistory('many.json', prepared.conversations[0].text, 'json', fullLimits)
+    const parts = historyParts(prepared)
+    const imported = parts.flatMap(part => parseHistory('many.json', part.text, part.format).conversations)
+    assert.deepEqual(identities(imported), identities(expected.conversations))
+    const fragments = parts.flatMap(part => { const value = JSON.parse(part.text); return Array.isArray(value) ? value : [value] })
+    assert.ok(fragments.length > 1)
+    assert.ok(fragments.every(c => c.personaMemoryPreprocessing.branchSelection.tips.length <= 16))
+    assert.ok(fragments.every(c => Object.keys(c.mapping).length < Object.keys(raw.mapping).length), 'named graphs retain only the selected ancestors')
+    assert.equal(imported.filter(c => c.preferred).length, 1)
+    assert.match(imported[0].warnings.join(' '), /自动拆批/)
+  }
+})
+
+test('anonymous split graphs keep stable identities, and preprocessing an already split export does not expand the other branches again', () => {
+  const { id, ...raw } = branching(41)
+  const prepared = preprocessHistory('anonymous.json', JSON.stringify(raw))
+  const expected = parseHistory('anonymous.json', prepared.conversations[0].text, 'json', fullLimits)
+  const parts = historyParts(prepared)
+  const imported = parts.flatMap(part => parseHistory('anonymous.json', part.text, part.format).conversations)
+  assert.deepEqual(identities(imported), identities(expected.conversations))
+  const reimported = parts.flatMap(part => historyParts(preprocessHistory('cleaned.json', part.text))).flatMap(part => parseHistory('cleaned.json', part.text, part.format).conversations)
+  assert.deepEqual(identities(reimported), identities(imported))
+})
+
+test('large shared prefixes split again by expanded message limits, while every branch keeps its full prefix', () => {
+  const prepared = preprocessHistory('long.json', JSON.stringify(branching(20, 1300)))
+  const parts = historyParts(prepared)
+  assert.ok(parts.length >= 2, 'raw JSON size alone does not capture repeated branch prefixes')
+  const conversations = parts.flatMap(part => parseHistory('long.json', part.text, part.format).conversations)
+  assert.equal(conversations.length, 20)
+  for (const conversation of conversations) {
+    assert.equal(conversation.messages.length, 1301)
+    assert.equal(conversation.messages[0].id, 'user-0')
+    assert.equal(conversation.messages[1299].id, 'user-1299')
+  }
+})
+
+test('branch batches also respect raw graph size and expanded archive size without clipping text', () => {
+  for (const repeated of [false, true]) {
+    const raw = branching(repeated ? 32 : 6)
+    const payload = 'x'.repeat(repeated ? 300000 : 700000)
+    if (repeated) raw.mapping['u-0'].message = { id: 'shared-user', role: 'user', content: payload }
+    else for (let i = 0; i < 6; i++) raw.mapping[`a-${i}`].message = { id: `answer-${i}`, role: 'assistant', content: payload }
+    const prepared = preprocessHistory('large.json', JSON.stringify(raw)), parts = historyParts(prepared)
+    assert.ok(parts.length >= 2)
+    const records = parts.flatMap(part => {
+      assert.ok(part.text.length <= 4000000)
+      const parsed = parseHistory('large.json', part.text, part.format)
+      assert.ok(JSON.stringify(parsed).length <= 8000000)
+      return parsed.conversations
+    })
+    assert.equal(records.length, repeated ? 32 : 6)
+    for (const record of records) assert.equal(record.messages[repeated ? 0 : 1].text, payload)
+  }
+})
+
+test('empty graph paths do not block import, and forged selections cannot bypass missing-node or cycle checks', () => {
+  const raw = branching(1)
+  for (let i = 0; i < 25; i++) raw.mapping[`empty-${i}`] = { parent: 'root', message: null }
+  const parts = historyParts(preprocessHistory('empty.json', JSON.stringify(raw)))
+  assert.equal(parts.flatMap(part => parseHistory('empty.json', part.text, part.format).conversations).length, 1)
+  const fragment = JSON.parse(parts[0].text)
+  for (const tips of [['missing'], ['a-0', 'a-0']]) assert.throws(() => parseHistory('x', JSON.stringify({ ...fragment, personaMemoryPreprocessing: { ...fragment.personaMemoryPreprocessing, branchSelection: { tips, preferred: 'a-0' } } }), 'json'), /分支分片/)
+  fragment.mapping.cycle = { parent: 'cycle', message: null }
+  assert.throws(() => parseHistory('x', JSON.stringify(fragment), 'json'), /循环/)
+})
+
+test('hundreds of branches from one source commit as a single archive, retaining identities through retries and repeated imports', async t => {
+  const { store, manager } = await fixture(t)
+  const prepared = preprocessHistory('many.json', JSON.stringify(branching(257))), parts = historyParts(prepared)
+  const expected = parseHistory('many.json', prepared.conversations[0].text, 'json', fullLimits)
+  assert.ok(parts.length >= 3)
+  let batchId = ''
+  for (const requestId of ['many-branches', 'many-branches-retry']) {
+    const started = await manager.handle(source, { op: 'beginUpload', filename: 'many.json', requestId, parts: parts.length, branches: 257 }, signal())
+    for (let index = 0; index < parts.length; index++) {
+      const request = { op: 'uploadPart' as const, uploadId: started.batchId, index, ...parts[index] }
+      await manager.handle(source, request, signal()); await manager.handle(source, request, signal())
+    }
+    const complete = await manager.handle(source, { op: 'finishUpload', uploadId: started.batchId }, signal())
+    if (batchId) assert.equal(complete.batchId, batchId)
+    batchId = complete.batchId
+    const archive = (await store.readArtifact('imports', batchId, batchSchema))!
+    assert.deepEqual(identities(archive.conversations), identities(expected.conversations))
+    assert.equal(complete.page!.conversationId, expected.conversations.find(c => c.preferred)!.id)
+  }
+  assert.equal((await manager.list()).length, 1)
 })
 
 test('whole-file upload commits all 307 conversations together, retries idempotently and removes hidden part files', async t => {

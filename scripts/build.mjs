@@ -23,7 +23,7 @@ for (const name of ['zod', 'js-yaml', 'proper-lockfile', 'graceful-fs', 'retry',
   if (!license) throw new Error('Missing bundled license: ' + name)
   notices.push(`## ${name} ${manifest.version}\n\n${await readFile(join(folder, license), 'utf8')}\n`)
 }
-await writeFile(join(root, 'THIRD_PARTY_NOTICES.md'), notices.join('\n'))
+await writeFile(join(root, 'THIRD_PARTY_NOTICES.md'), notices.join('\n').trimEnd() + '\n')
 const output = join(root, 'lib')
 if (dirname(output) !== root.replace(/[\\/]$/, '')) throw new Error('Unexpected build output directory')
 await rm(output, { recursive: true, force: true })

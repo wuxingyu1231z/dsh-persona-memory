@@ -175,6 +175,22 @@ test('built import UI previews a file, applies an editable persona draft and ope
   assert.equal([...container.querySelectorAll('button')].some(b => b.textContent === 'refreshWorkspaces'), false)
   await click('continueHistory')
   assert.equal(actions.at(-1).workspaceId, null); assert.notEqual(actions.at(-1).requestId, firstRequestId)
+  // The built browser must auto-partition a single many-branch file as well as many conversations.
+  const previousActions = actions.length
+  const mapping = { root: { parent: null, message: { id: 'shared', role: 'user', content: '共同前文' } } }
+  for (let i = 0; i < 73; i++) mapping[`answer-${i}`] = { parent: 'root', message: { id: `a-${i}`, role: 'assistant', content: `分支正文 ${i}` } }
+  const manyBranches = JSON.stringify({ id: 'browser-branches', current_node: 'answer-39', mapping })
+  Object.defineProperty(file, 'files', { configurable: true, value: [{ name: 'many.json', size: Buffer.byteLength(manyBranches), text: async () => manyBranches }] })
+  await act(async () => { file.dispatchEvent(new window.Event('change', { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 20)) })
+  const uploadedParts = actions.slice(previousActions)
+  assert.equal(uploadedParts[0].op, 'beginUpload'); assert.equal(uploadedParts[0].branches, 73)
+  assert.equal(uploadedParts.at(-1).op, 'finishUpload')
+  const { parseHistory } = await import('../lib/import-parser.js')
+  const branches = uploadedParts.filter(a => a.op === 'uploadPart').flatMap(a => parseHistory('many.json', a.text, a.format).conversations)
+  assert.equal(branches.length, 73); assert.equal(new Set(branches.map(c => c.id)).size, 73)
+  assert.equal(branches.find(c => c.preferred).branchId, 'answer-39')
+  assert.ok(branches.every(c => c.messages[0].text === '共同前文'))
+  assert.equal(container.querySelector('[role=alert]'), null)
 })
 
 test('distributed preprocessing CLI writes one cleaned whole export and report without overwriting originals or output', async t => {
