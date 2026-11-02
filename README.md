@@ -268,9 +268,9 @@ npm run check:installed
 
 这条路径依赖可读取的 Desktop 安装包。`check:installed` 使用其中记录的 Node 与 DSH 副本，额外验证兼容性及实际工作区行为。界面检查可运行 `npm run check:ui`，默认使用 Windows Edge；其他兼容 Chromium 浏览器可通过 `PERSONA_TEST_BROWSER` 指定可执行文件。
 
-多版本回归可执行 `npm run check:compat`，默认验证 rc.3 / rc.4 / rc.5 的同一构建，准备方式见[兼容性说明](docs/COMPATIBILITY.md)。开发依赖精确版本用于复现测试，安装兼容范围由 `engines.dsh` 和宿主 peers 声明。
+多版本回归可执行 `npm run check:compat`，默认验证 rc.3 / rc.4 / rc.5 的同一构建。开发依赖精确版本用于复现测试，安装兼容范围由 `engines.dsh` 和宿主 peers 声明。
 
-发布前先构建并生成 `.tgz`，再运行 `node scripts/smoke-install.mjs` 验证独立测试 profile 的安装。`--upgrade` 还需要本地 `releases/` 中的 `0.8.3-alpha.1` 包及 DSH rc.3 测试副本，用于验证宿主与插件一起升级；旧运行时可通过 `PERSONA_UPGRADE_RUNTIME` 指定。详细边界见[验证记录](VALIDATION.md)与[兼容性说明](docs/COMPATIBILITY.md)。
+发布前先构建并生成 `.tgz`，再运行 `node scripts/smoke-install.mjs` 验证独立测试 profile 的安装。`--upgrade` 还需要本地 `releases/` 中的 `0.8.3-alpha.1` 包及 DSH rc.3 测试副本，用于验证宿主与插件一起升级；旧运行时可通过 `PERSONA_UPGRADE_RUNTIME` 指定。详细边界见[验证记录](VALIDATION.md)。
 
 ## 后续计划
 

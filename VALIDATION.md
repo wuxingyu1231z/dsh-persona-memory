@@ -151,7 +151,7 @@ Host 从工作区 ID 重新查验真实记录和目录状态，使用该目录�
 
 发布包 `releases/dsh-persona-memory-0.3.1-alpha.1.tgz` 通过 `scripts/smoke-install.mjs`：由实际 DSH 原生安装事务与自带 pnpm 11.28.5 在全新临时 Web profile 安装成功，检查安装版本、自动启用的 bundle、空豁免记录，并由实际 CLI 完成配置组合。详细报告为 `.test-output/installed-transaction-report.json`。这次确实执行了安装事务，仍未对真实用户的 Web/Desktop profile 安装或启动原生窗口。
 
-正式 memory 文件格式没有变更。所有写入和运行时副本位于本插件测试目录，未修改 DSH 安装、现有聊天、用户 profile 或其版本豁免。提取和 embeddings 使用模拟响应；真实模型质量与 Desktop 原生窗口仍待验收。详细过程见 [兼容性说明](docs/COMPATIBILITY.md)。
+正式 memory 文件格式没有变更。所有写入和运行时副本位于本插件测试目录，未修改 DSH 安装、现有聊天、用户 profile 或其版本豁免。提取和 embeddings 使用模拟响应；真实模型质量与 Desktop 原生窗口仍待验收。
 
 ## 第三阶段：0.3.0-alpha.1
 

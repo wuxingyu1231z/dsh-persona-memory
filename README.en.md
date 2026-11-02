@@ -268,9 +268,9 @@ npm run check:installed
 
 This path requires a readable Desktop installation archive. `check:installed` uses its recorded Node executable and DSH copy, and additionally checks compatibility and real workspace behavior. Run `npm run check:ui` for visual checks; it defaults to Windows Edge. Set `PERSONA_TEST_BROWSER` to another compatible Chromium executable if needed.
 
-Run `npm run check:compat` for regression checks of the same build on rc.3 / rc.4 / rc.5; see the [compatibility guide](docs/COMPATIBILITY.md) for fixture preparation. Exact development dependencies make tests reproducible; `engines.dsh` and host peer ranges govern installation compatibility.
+Run `npm run check:compat` for regression checks of the same build on rc.3 / rc.4 / rc.5. Exact development dependencies make tests reproducible; `engines.dsh` and host peer ranges govern installation compatibility.
 
-Before a release, build and pack the `.tgz`, then run `node scripts/smoke-install.mjs` to test installation in an isolated profile. The optional `--upgrade` check requires the local `0.8.3-alpha.1` archive in `releases/` and a DSH rc.3 test copy to verify upgrading both the host and plugin. Set `PERSONA_UPGRADE_RUNTIME` to specify the old runtime directory. See the [validation record](VALIDATION.md) and [compatibility guide](docs/COMPATIBILITY.md) for the tested scope.
+Before a release, build and pack the `.tgz`, then run `node scripts/smoke-install.mjs` to test installation in an isolated profile. The optional `--upgrade` check requires the local `0.8.3-alpha.1` archive in `releases/` and a DSH rc.3 test copy to verify upgrading both the host and plugin. Set `PERSONA_UPGRADE_RUNTIME` to specify the old runtime directory. See the [validation record](VALIDATION.md) for the tested scope.
 
 ## Roadmap
 

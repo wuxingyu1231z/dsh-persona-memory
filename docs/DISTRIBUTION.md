@@ -27,7 +27,7 @@ Web 与 Desktop 使用同一个 `dsh.client.platform: web` 产物。Desktop 的 
 
 0.3.2-alpha.1 使用同一包入口和安装方式，兼容基线为 DSH 0.2.1-rc.3 / Cordis 4.0.5 / Node 24。新增的 `imports/`、`continuations/` 与 `semantic/` 位于既有 memory 根目录，不需要单独服务或迁移正式 Markdown 记忆。续聊调用宿主现有的 Session 创建、能力预设、Workspace 导航与持久化能力。语义服务完全可选。
 
-本版本修复旧包因精确依赖 0.1.7-alpha.2 而被当前 DSH 拒绝的问题。安装新版包即可，无需 `allow-version`。构建前核对实际依赖版本，并在实际安装运行时的副本上执行兼容性回归，见 [验证步骤](COMPATIBILITY.md)。旧发布包保留用于记录，不能在当前 DSH 上继续使用。
+本版本修复旧包因精确依赖 0.1.7-alpha.2 而被当前 DSH 拒绝的问题。安装新版包即可，无需 `allow-version`。构建前核对实际依赖版本，并在实际安装运行时的副本上执行兼容性回归。旧发布包保留用于记录，不能在当前 DSH 上继续使用。
 
 0.3.2-alpha.1 进一步修复 Remote 子服务注入依赖，发布检查包含构建后 Client 的真实 Cordis 注册与 Remote 调用，不能仅用传入模拟 API 的组件测试替代此检查。安装该包后按应用提示重启或刷新，使新的浏览器工厂替换旧版本。
 
