@@ -16,18 +16,21 @@ export const batchSchema = z.object({ version: z.literal(1), id: idSchema, filen
 export type ImportBatch = z.infer<typeof batchSchema>
 export const uploadSchema = z.object({ version: z.literal(1), id: idSchema, filename: z.string(), total: z.number().int().positive().max(1024), expected: z.number().int().positive().max(10000), createdAt: z.string(), complete: idSchema.nullable(), parts: z.array(z.object({ index: z.number().int().nonnegative(), fingerprint: z.string(), id: idSchema, characters: z.number().int().nonnegative() })) })
 export type ImportUpload = z.infer<typeof uploadSchema>
+export const uploadChunkSchema = z.object({ total: z.number().int().min(1).max(1024), format: z.enum(['json', 'markdown']), text: z.string().max(60000) })
 export const importRequestSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('preview'), filename: z.string().min(1).max(200), text: z.string().max(4000000), format: z.enum(['auto', 'json', 'markdown']) }).strict(),
   z.object({ op: z.literal('open'), batchId: idSchema, conversationId: idSchema.optional(), offset: z.number().int().nonnegative().default(0) }).strict(),
-  z.object({ op: z.literal('analyze'), batchId: idSchema, conversationIds: z.array(idSchema).min(1).max(32) }).strict(),
+  z.object({ op: z.literal('analyze'), batchId: idSchema, conversationIds: z.array(idSchema).min(1).max(32), incremental: z.boolean().optional() }).strict(),
   z.object({ op: z.literal('apply'), batchId: idSchema, conversationIds: z.array(idSchema).min(1).max(32), personaId: idSchema, newPersona: personaInputSchema.optional() }).strict(),
   z.object({ op: z.literal('continue'), batchId: idSchema, conversationId: idSchema, personaId: idSchema, mode: z.enum(['summary', 'full']), requestId: idSchema, workspaceId: z.string().min(1).max(200).nullable().optional() }).strict(),
   z.object({ op: z.literal('beginUpload'), filename: z.string().min(1).max(200), requestId: idSchema, parts: z.number().int().min(1).max(1024), branches: z.number().int().min(1).max(10000) }).strict(),
   z.object({ op: z.literal('uploadPart'), uploadId: idSchema, index: z.number().int().min(0).max(1023), text: z.string().max(4000000), format: z.enum(['json', 'markdown']) }).strict(),
+  z.object({ op: z.literal('uploadChunk'), uploadId: idSchema, index: z.number().int().min(0).max(1023), chunk: z.number().int().min(0).max(1023), ...uploadChunkSchema.shape }).strict(),
   z.object({ op: z.literal('finishUpload'), uploadId: idSchema }).strict(),
 ])
 export type ImportRequest = z.infer<typeof importRequestSchema>
 export const importReplySchema = z.object({
+  pendingAnalysisIds: z.array(idSchema).optional(),
   batchId: idSchema, filename: z.string(), warnings: z.array(z.string()),
   conversations: z.array(conversationSchema.omit({ messages: true, parts: true, analysisKey: true }).extend({ messageCount: z.number(), estimatedCalls: z.number(), analysisReady: z.boolean().default(false) })),
   page: z.object({ conversationId: idSchema, offset: z.number(), total: z.number(), messages: z.array(historyMessageSchema) }).nullable(),

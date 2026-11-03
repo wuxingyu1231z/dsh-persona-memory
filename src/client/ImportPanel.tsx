@@ -4,6 +4,7 @@ import type { Persona } from '../schema.ts'
 import type { ImportRequest, ImportReply, ImportList } from '../import-schema.ts'
 import type { LocaleKey } from './locales.ts'
 import { preprocessHistory, historyParts } from '../preprocess.ts'
+import { uploadChunks } from '../import-upload.ts'
 import type { ManagementOptions } from '../management-schema.ts'
 
 export interface ImportUi {
@@ -60,7 +61,17 @@ export function ImportPanel({ api, personas, selectedPersonaId, applied, t, onBu
     if (controller.current) return
     const abort = new AbortController(); controller.current = abort; setBusy(true); setError(''); setNotice('')
     try {
-      const value = await api.request(request, abort.signal)
+      let value: ImportReply
+      if (request.op === 'analyze') {
+        let pending = request.conversationIds, step = 0
+        do {
+          abort.signal.throwIfAborted()
+          setProgress(`${t('analysisProgress')} ${++step} · ${t('remainingBranches')} ${pending.length}`)
+          value = await api.request({ ...request, conversationIds: pending, incremental: true }, abort.signal)
+          if (alive.current) setReply(value)
+          pending = value.pendingAnalysisIds ?? []
+        } while (pending.length)
+      } else value = await api.request(request, abort.signal)
       if (!alive.current) return
       setReply(value)
       if (request.op === 'open' && !request.conversationId || request.op === 'preview') {
@@ -76,11 +87,24 @@ export function ImportPanel({ api, personas, selectedPersonaId, applied, t, onBu
         continuation.current = { key: '', requestId: '' }
       }
     } catch (e) { if (alive.current) setError(abort.signal.aborted ? t('importCancelled') : e instanceof Error ? e.message : String(e)) }
-    finally { if (controller.current === abort) controller.current = undefined; if (alive.current) setBusy(false) }
+    finally { if (controller.current === abort) controller.current = undefined; if (alive.current) { setBusy(false); setProgress('') } }
   }
   async function upload(file?: { name: string; size: number; text(): Promise<string> }) {
     if (controller.current) return
     const abort = new AbortController(); controller.current = abort; setBusy(true); setError(''); setNotice(''); setProgress(t('preprocessing'))
+    let stage = t('preprocessing')
+    // Only retry transport failures. The Host receipts make these requests idempotent.
+    const send = async (request: ImportRequest): Promise<ImportReply> => {
+      for (let attempt = 0; ; attempt++) {
+        try { return await api.request(request, abort.signal) }
+        catch (error) {
+          abort.signal.throwIfAborted()
+          if (attempt >= 2 || !/failed to fetch|network|connection|transport failure/i.test(String(error))) throw error
+          await new Promise(resolve => setTimeout(resolve, 300 * (attempt + 1)))
+          abort.signal.throwIfAborted()
+        }
+      }
+    }
     try {
       if (file) {
         uploadJob.current = undefined
@@ -94,21 +118,29 @@ export function ImportPanel({ api, personas, selectedPersonaId, applied, t, onBu
       const job = uploadJob.current; if (!job) return
       let value: ImportReply
       {
-        const started = await api.request({ op: 'beginUpload', filename: job.filename, requestId: job.requestId, parts: job.parts.length, branches: job.branches }, abort.signal)
+        stage = t('preparingUpload')
+        const started = await send({ op: 'beginUpload', filename: job.filename, requestId: job.requestId, parts: job.parts.length, branches: job.branches })
         if (started.conversations.length) value = started
         else {
           for (let index = 0; index < job.parts.length; index++) {
-            abort.signal.throwIfAborted(); if (alive.current) setProgress(`${t('uploadingAll')} ${index + 1}/${job.parts.length}`)
-            await api.request({ op: 'uploadPart', uploadId: started.batchId, index, ...job.parts[index] }, abort.signal)
+            const part = job.parts[index], chunks = uploadChunks(part.text)
+            for (const [chunk, text] of chunks.entries()) {
+              abort.signal.throwIfAborted()
+              stage = `${t('uploadingAll')} ${index + 1}/${job.parts.length} · ${chunk + 1}/${chunks.length}`
+              if (alive.current) setProgress(stage)
+              await send({ op: 'uploadChunk', uploadId: started.batchId, index, chunk, total: chunks.length, text, format: part.format })
+            }
           }
-          value = await api.request({ op: 'finishUpload', uploadId: started.batchId }, abort.signal)
+          stage = t('committingUpload')
+          if (alive.current) setProgress(stage)
+          value = await send({ op: 'finishUpload', uploadId: started.batchId })
         }
       }
       if (!alive.current) return
       setReply(value); setSelected(value.page ? [value.page.conversationId] : []); draftKey.current = ''
       setNotice(`${t('importedAll')}: ${job.sources} · ${t('branchCount')}: ${value.conversations.length}`)
       uploadJob.current = undefined; setArchives(await api.list())
-    } catch (e) { if (alive.current) setError(abort.signal.aborted ? t('importCancelled') : e instanceof Error ? e.message : String(e)) }
+    } catch (e) { if (alive.current) setError(abort.signal.aborted ? t('importCancelled') : `${stage}: ${e instanceof Error ? e.message : String(e)}`) }
     finally { if (controller.current === abort) controller.current = undefined; if (alive.current) { setBusy(false); setProgress('') } }
   }
   return <section data-persona-import style={{ marginTop: 15, borderTop: '1px solid var(--border-color, #aaa5)', paddingTop: 10 }}>

@@ -344,7 +344,8 @@ export class PersonaMemoryService extends TypertRemoteService {
     if (request.op === 'continue' && request.workspaceId === undefined && chosen.projectId && !cwd) throw new Error('请先在 Harness 中打开该项目，再创建项目续聊')
     if ((request.op === 'analyze' || request.op === 'continue') && (!chosen.provider || !chosen.model)) throw new Error('请先在管理页选择模型')
     const reply = await this.importer.handle({ ...chosen, cwd }, request, signal)
-    await this.refresh(); return reply
+    if (request.op === 'apply') await this.refresh()
+    return reply
   }
   async manage(untrustedView: ManagementView, untrusted: Request): Promise<Snapshot> {
     await this.ready

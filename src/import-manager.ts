@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import { MemoryStore, projectId, topicKey } from './store.ts'
 import { parseHistory, digest } from './import-parser.ts'
-import { batchSchema, analysisSchema, importRequestSchema, uploadSchema, type ImportUpload, type ImportRequest, type ImportReply, type ImportBatch, type ImportedConversation, type ImportAnalysis, type ImportList, type HistoryMessage } from './import-schema.ts'
+import { batchSchema, analysisSchema, importRequestSchema, uploadSchema, uploadChunkSchema, type ImportUpload, type ImportRequest, type ImportReply, type ImportBatch, type ImportedConversation, type ImportAnalysis, type ImportList, type HistoryMessage } from './import-schema.ts'
 import type { LearningJob, ResolvedConfig } from './schema.ts'
 import { ImportOutputError } from './import-output.ts'
 
@@ -64,6 +64,7 @@ export class ImportManager {
         const text = await this.generate(agent, attempt ? system + '\nPrevious response was empty, incomplete or invalid. Start over with one compact valid JSON object, all required fields, short summaries, and fewer proposals. No Markdown or commentary. Do not continue a previous partial response.' : system, payload, signal, attempt)
         signal.throwIfAborted(); return parsed(text)
       } catch (error) {
+        if (signal.aborted && signal.reason?.name === 'TimeoutError') throw new Error('本段历史提取超时，已完成的分段和汇总已保留，请重试。')
         signal.throwIfAborted()
         if (!(error instanceof ImportOutputError)) throw error
         if (attempt >= 1) throw new Error(`${error.message}（已自动重试一次；再次提取会复用已完成的分析段。）`)
@@ -72,7 +73,7 @@ export class ImportManager {
   }
   private async load(id: string): Promise<ImportBatch> { const batch = await this.store.readArtifact('imports', id, batchSchema); if (!batch) throw new Error('未找到导入批次'); return batch }
   private progress(upload: ImportUpload): ImportReply { return { batchId: upload.id, filename: upload.filename, warnings: [], conversations: [], page: null, continuedSessionId: null, stagedCandidates: 0, savedMemories: 0 } }
-  private async upload(request: Extract<ImportRequest, { op: 'beginUpload' | 'uploadPart' | 'finishUpload' }>, signal: AbortSignal): Promise<ImportReply> {
+  private async upload(request: Extract<ImportRequest, { op: 'beginUpload' | 'uploadPart' | 'uploadChunk' | 'finishUpload' }>, signal: AbortSignal): Promise<ImportReply> {
     if (request.op === 'beginUpload') {
       const id = `upload-${digest(request.requestId).slice(0, 32)}`
       const upload = await this.store.updateArtifact('imports', id, uploadSchema, old => {
@@ -86,6 +87,30 @@ export class ImportManager {
     const upload = await this.store.readArtifact('imports', request.uploadId, uploadSchema)
     if (!upload) throw new Error('未找到整包导入任务')
     if (upload.complete) return this.view(await this.load(upload.complete))
+    if (request.op === 'uploadChunk') {
+      if (request.index >= upload.total || request.chunk >= request.total) throw new Error('传输小片序号超过范围')
+      if (upload.parts.some(p => p.index === request.index)) return this.progress(upload)
+      const key = (chunk: number) => `part-chunk-${digest(`${upload.id}:${request.index}:${chunk}`).slice(0, 40)}`
+      const value = { total: request.total, format: request.format, text: request.text }
+      await this.store.updateArtifact('imports', key(request.chunk), uploadChunkSchema, old => {
+        signal.throwIfAborted()
+        if (old && JSON.stringify(old) !== JSON.stringify(value)) throw new Error('同一传输小片内容发生变化')
+        return old ?? value
+      })
+      if (request.chunk !== request.total - 1) return this.progress(upload)
+      const texts: string[] = []; let characters = 0
+      for (let i = 0; i < request.total; i++) {
+        signal.throwIfAborted()
+        const chunk = await this.store.readArtifact('imports', key(i), uploadChunkSchema)
+        if (!chunk || chunk.total !== request.total || chunk.format !== request.format) throw new Error('传输小片缺失或不一致，请重试导入')
+        characters += chunk.text.length
+        if (characters > 4000000) throw new Error('单个导入分片超过 400 万字符')
+        texts.push(chunk.text)
+      }
+      const reply = await this.upload({ op: 'uploadPart', uploadId: upload.id, index: request.index, text: texts.join(''), format: request.format }, signal)
+      for (let i = 0; i < request.total; i++) await this.store.removeImportPart(key(i))
+      return reply
+    }
     if (request.op === 'uploadPart') {
       if (request.index >= upload.total) throw new Error('分片序号超过范围')
       const fingerprint = digest(request.text), old = upload.parts.find(p => p.index === request.index)
@@ -138,7 +163,7 @@ export class ImportManager {
     const selected = batch.conversations.find(c => c.id === conversationId) ?? batch.conversations.find(c => c.preferred) ?? batch.conversations[0]
     return { batchId: batch.id, filename: batch.filename, warnings: batch.warnings, conversations: batch.conversations.map(({ messages, parts, analysisKey, ...c }) => ({ ...c, analysisReady: !!c.analysis, analysis: c.id === selected.id ? c.analysis : null, messageCount: messages.length, estimatedCalls: Math.max(1, chunks(messages, this.config.importInputChars - 2000).length * 2 - 1) })), page: { conversationId: selected.id, offset, total: selected.messages.length, messages: selected.messages.slice(offset, offset + 50).map(m => ({ ...m, text: m.text.slice(0, 6000), clipped: m.text.length > 6000 })) }, continuedSessionId: null, stagedCandidates: 0, savedMemories: 0 }
   }
-  private async analyze(agent: ImportSource, batchId: string, id: string, signal: AbortSignal): Promise<void> {
+  private async analyze(agent: ImportSource, batchId: string, id: string, signal: AbortSignal, incremental = false): Promise<boolean> {
     let batch = await this.load(batchId)
     const conversation = batch.conversations.find(c => c.id === id); if (!conversation) throw new Error('未找到选定分支')
     const segments = chunks(conversation.messages, this.config.importInputChars - 2000)
@@ -146,14 +171,18 @@ export class ImportManager {
     const summaryLimit = Math.min(this.config.importSummaryChars, Math.floor(this.config.importInputChars / 4))
     const route = importEnvironment(agent)
     const cacheKey = digest(JSON.stringify({ messages: conversation.messages, prompt: IMPORT_PROMPT, reduce: REDUCE_PROMPT, provider: route.provider, model: route.model, budget: this.config.importInputChars, summaryLimit }))
-    if (conversation.analysisKey === cacheKey && conversation.analysis) return
+    if (conversation.analysisKey === cacheKey && conversation.analysis) return true
+    let generated = false
+    const stepSignal = incremental ? AbortSignal.any([signal, AbortSignal.timeout(240000)]) : signal
     const analyses: ImportAnalysis[] = []
     for (const segment of segments) {
       signal.throwIfAborted()
       const hash = digest(cacheKey + JSON.stringify(segment))
       let analysis = conversation.parts.find(p => p.hash === hash)?.analysis
       if (!analysis) {
-        analysis = await this.generateAnalysis(agent, IMPORT_PROMPT, { messages: segment, summaryLimit }, signal); signal.throwIfAborted()
+        if (incremental && generated) return false
+        generated = true
+        analysis = await this.generateAnalysis(agent, IMPORT_PROMPT, { messages: segment, summaryLimit }, stepSignal); signal.throwIfAborted()
         if (analysis.summary.length > 2000 || analysis.proposals.length > 12) throw new Error('导入分析结果超过单段限制')
         analysis.proposals = analysis.proposals.filter(p => segment.some(m => m.role === 'user' && m.id === p.messageId && m.text.includes(p.evidence)))
         const saved = analysis
@@ -161,9 +190,26 @@ export class ImportManager {
       }
       analyses.push(analysis)
     }
+    const reduce = async (payload: object): Promise<ImportAnalysis | undefined> => {
+      const hash = digest(cacheKey + ':reduce:' + JSON.stringify(payload))
+      const cached = conversation.parts.find(p => p.hash === hash)?.analysis
+      if (cached) return cached
+      if (incremental && generated) return
+      generated = true
+      const analysis = await this.generateAnalysis(agent, REDUCE_PROMPT, payload, stepSignal)
+      if (analysis.summary.length > summaryLimit) throw new Error('汇总结果超过摘要预算')
+      await this.store.updateArtifact('imports', batchId, batchSchema, current => {
+        signal.throwIfAborted(); if (!current) throw new Error('批次已移除')
+        const c = current.conversations.find(c => c.id === id)!
+        if (!c.parts.some(p => p.hash === hash)) c.parts.push({ hash, analysis })
+        return current
+      })
+      return analysis
+    }
     let summaries: ImportAnalysis[] = analyses.map(a => ({ ...a, proposals: [] }))
     if (summaries.length === 1 && summaries[0].summary.length > summaryLimit) {
-      const result = await this.generateAnalysis(agent, REDUCE_PROMPT, { summaries, summaryLimit }, signal)
+      const result = await reduce({ summaries, summaryLimit })
+      if (!result) return false
       if (result.summary.length > summaryLimit) throw new Error('汇总结果超过摘要预算')
       summaries = [{ ...result, proposals: [] }]
     }
@@ -175,7 +221,8 @@ export class ImportManager {
         if (group.length === 1) { next.push(group[0]); continue }
         const payload = { summaries: group, summaryLimit }
         if (JSON.stringify(payload).length > this.config.importInputChars) throw new Error('汇总输入超过预算，请减小摘要长度')
-        const combined = await this.generateAnalysis(agent, REDUCE_PROMPT, payload, signal); signal.throwIfAborted()
+        const combined = await reduce(payload)
+        if (!combined) return false; signal.throwIfAborted()
         if (combined.summary.length > summaryLimit) throw new Error('汇总结果超过摘要预算')
         next.push({ ...combined, proposals: [] })
       }
@@ -186,10 +233,11 @@ export class ImportManager {
     if (proposals.length > 100) throw new Error('候选记忆过多，请拆分会话导入')
     const final = analysisSchema.parse({ ...combined, proposals })
     await this.store.updateArtifact('imports', batchId, batchSchema, current => { if (!current) throw new Error('批次已移除'); const c = current.conversations.find(c => c.id === id)!; c.analysis = final; c.analysisKey = cacheKey; return current })
+    return true
   }
   private async run(agent: ImportSource, request: ImportRequest, signal: AbortSignal): Promise<ImportReply> {
     signal.throwIfAborted()
-    if (request.op === 'beginUpload' || request.op === 'uploadPart' || request.op === 'finishUpload') return this.upload(request, signal)
+    if (request.op === 'beginUpload' || request.op === 'uploadPart' || request.op === 'uploadChunk' || request.op === 'finishUpload') return this.upload(request, signal)
     if (request.op === 'preview') {
       const batch = parseHistory(request.filename, request.text, request.format, { chars: this.config.importMaxChars, conversations: this.config.importMaxConversations, branches: this.config.importMaxBranches, messages: this.config.importMaxMessages })
       const saved = await this.store.updateArtifact('imports', batch.id, batchSchema, existing => existing ?? batch)
@@ -197,7 +245,14 @@ export class ImportManager {
     }
     let batch = await this.load(request.batchId)
     if (request.op === 'open') return this.view(batch, request.conversationId, request.offset)
-    if (request.op === 'analyze') { for (const id of [...new Set(request.conversationIds)]) await this.analyze(agent, batch.id, id, signal); return this.view(await this.load(batch.id), request.conversationIds[0]) }
+    if (request.op === 'analyze') {
+      const ids = [...new Set(request.conversationIds)], pending: string[] = []
+      for (const [index, id] of ids.entries()) {
+        if (!await this.analyze(agent, batch.id, id, signal, request.incremental)) pending.push(id)
+        if (request.incremental) { pending.push(...ids.slice(index + 1)); break }
+      }
+      return { ...this.view(await this.load(batch.id), ids[0]), pendingAnalysisIds: pending }
+    }
     if (request.op === 'continue') {
       const conversation = batch.conversations.find(c => c.id === request.conversationId); if (!conversation) throw new Error('未找到选定分支')
       await this.store.getPersona(request.personaId)

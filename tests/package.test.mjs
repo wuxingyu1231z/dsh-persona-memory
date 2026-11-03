@@ -108,11 +108,14 @@ test('built import UI previews a file, applies an editable persona draft and ope
   const conv = { id: 'conv-one', sourceId: 'web-chat', branchId: 'leaf', platform: 'chatgpt', title: '旧实验', preferred: true, warnings: [], analysis: null, messageCount: 2, estimatedCalls: 1 }
   let response = { batchId: 'batch-one', filename: 'history.json', warnings: ['附件未导入'], conversations: [conv], page: { conversationId: conv.id, offset: 0, total: 2, messages: [{ id: 'u', role: 'user', text: '<script>literal source</script>', at: null }, { id: 'a', role: 'assistant', text: '实验建议', at: null }] }, continuedSessionId: null, stagedCandidates: 0, savedMemories: 0 }
   let retry = false
+  let failUploadOnce = false, analyzePendingOnce = true
   const imports = {
     list: async () => actions.length ? [{ id: 'batch-one', filename: 'history.json', createdAt: now, conversations: 1 }] : [],
     request: async (request, signal) => {
       assert.equal(signal.aborted, false); actions.push(request)
-      if (request.op === 'beginUpload' || request.op === 'uploadPart') return { ...response, batchId: 'upload-test', conversations: [], page: null }
+      if (request.op === 'uploadChunk' && failUploadOnce) { failUploadOnce = false; throw new TypeError('Failed to fetch') }
+      if (request.op === 'analyze' && analyzePendingOnce) { analyzePendingOnce = false; return { ...response, pendingAnalysisIds: request.conversationIds } }
+      if (request.op === 'beginUpload' || request.op === 'uploadPart' || request.op === 'uploadChunk') return { ...response, batchId: 'upload-test', conversations: [], page: null }
       if (request.op === 'analyze') response = { ...response, conversations: [{ ...conv, analysis: { summary: '已完成实验 A，下一步做对照。', personaDraft: { name: '导入导师', description: '严谨', prompt: '指导研究' }, topic: 'research', proposals: [] } }] }
       if (request.op === 'apply') { assert.ok(request.newPersona); state = { ...state, personas: [...state.personas, { ...request.newPersona, revision: 1, updatedAt: now }] }; response = { ...response, savedMemories: 1 } }
       if (request.op === 'continue') { if (!retry) { retry = true; throw new Error('connection interrupted') }; return { ...response, continuedSessionId: 'session-import-created' } }
@@ -149,12 +152,12 @@ test('built import UI previews a file, applies an editable persona draft and ope
   const wholeExport = JSON.stringify(Array.from({ length: 307 }, (_, index) => ({ id: `history-${index}`, messages: [{ role: 'user', content: `question ${index}` }, { role: 'tool', content: 'discard this tool payload' }, { role: 'assistant', content: 'visible reply' }] })))
   Object.defineProperty(file, 'files', { configurable: true, value: [{ name: 'history.json', size: Buffer.byteLength(wholeExport), text: async () => wholeExport }] })
   await act(async () => { file.dispatchEvent(new window.Event('change', { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 20)) })
-  assert.deepEqual(actions.map(a => a.op), ['beginUpload', ...Array(10).fill('uploadPart'), 'finishUpload'])
-  const uploaded = actions.filter(a => a.op === 'uploadPart').flatMap(a => { const value = JSON.parse(a.text); return Array.isArray(value) ? value : [value] })
+  assert.deepEqual(actions.map(a => a.op), ['beginUpload', ...Array(10).fill('uploadChunk'), 'finishUpload'])
+  const uploaded = actions.filter(a => a.op === 'uploadChunk').flatMap(a => { const value = JSON.parse(a.text); return Array.isArray(value) ? value : [value] })
   assert.deepEqual(uploaded.map(c => c.id), Array.from({ length: 307 }, (_, index) => `history-${index}`))
   assert.doesNotMatch(JSON.stringify(uploaded), /discard this tool payload/)
   assert.match(container.textContent, /importedAll: 307/); assert.match(container.textContent, /literal source/); assert.equal(container.querySelector('script'), null)
-  await click('extractCurrent'); assert.match(container.textContent, /下一步做对照/)
+  await click('extractCurrent'); assert.equal(actions.filter(a => a.op === 'analyze').length, 2); assert.ok(actions.filter(a => a.op === 'analyze').every(a => a.incremental)); assert.match(container.textContent, /下一步做对照/)
   const target = container.querySelector('select[aria-label=importTarget]'); target.value = '__new'
   await act(async () => target.dispatchEvent(new window.Event('change', { bubbles: true })))
   assert.equal(container.querySelector('textarea[aria-label=draftPrompt]').value, '指导研究')
@@ -179,17 +182,26 @@ test('built import UI previews a file, applies an editable persona draft and ope
   const previousActions = actions.length
   const mapping = { root: { parent: null, message: { id: 'shared', role: 'user', content: '共同前文' } } }
   for (let i = 0; i < 73; i++) mapping[`answer-${i}`] = { parent: 'root', message: { id: `a-${i}`, role: 'assistant', content: `分支正文 ${i}` } }
+  mapping.root.message.content = '共同前文' + '中文😀\n"'.repeat(18000)
+  failUploadOnce = true
   const manyBranches = JSON.stringify({ id: 'browser-branches', current_node: 'answer-39', mapping })
   Object.defineProperty(file, 'files', { configurable: true, value: [{ name: 'many.json', size: Buffer.byteLength(manyBranches), text: async () => manyBranches }] })
-  await act(async () => { file.dispatchEvent(new window.Event('change', { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 20)) })
+  await act(async () => { file.dispatchEvent(new window.Event('change', { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 800)) })
   const uploadedParts = actions.slice(previousActions)
   assert.equal(uploadedParts[0].op, 'beginUpload'); assert.equal(uploadedParts[0].branches, 73)
   assert.equal(uploadedParts.at(-1).op, 'finishUpload')
   const { parseHistory } = await import('../lib/import-parser.js')
-  const branches = uploadedParts.filter(a => a.op === 'uploadPart').flatMap(a => parseHistory('many.json', a.text, a.format).conversations)
+  const assembled = new Map()
+  for (const a of uploadedParts.filter(a => a.op === 'uploadChunk')) {
+    assert.ok(Buffer.byteLength(JSON.stringify(a)) < 65536, 'RPC request stays below 64 KiB even with Chinese, emoji and escaping')
+    if (!assembled.has(a.index)) assembled.set(a.index, new Map())
+    assembled.get(a.index).set(a.chunk, a.text)
+  }
+  const branches = [...assembled.values()].flatMap(chunks => parseHistory('many.json', [...chunks.entries()].sort((a, b) => a[0] - b[0]).map(([, text]) => text).join(''), 'json').conversations)
   assert.equal(branches.length, 73); assert.equal(new Set(branches.map(c => c.id)).size, 73)
   assert.equal(branches.find(c => c.preferred).branchId, 'answer-39')
-  assert.ok(branches.every(c => c.messages[0].text === '共同前文'))
+  assert.ok(branches.every(c => c.messages[0].text === mapping.root.message.content))
+  assert.equal(failUploadOnce, false, 'the simulated transport failure was retried automatically')
   assert.equal(container.querySelector('[role=alert]'), null)
 })
 

@@ -74,27 +74,27 @@ flowchart LR
 
 ### 使用发布包安装
 
-直接下载 [dsh-persona-memory-0.8.4-alpha.1.tgz](https://github.com/wuxingyu1231z/dsh-persona-memory/releases/download/v0.8.4-alpha.1/dsh-persona-memory-0.8.4-alpha.1.tgz)，或前往 [GitHub Releases](https://github.com/wuxingyu1231z/dsh-persona-memory/releases) 查看发布说明和校验文件。目前尚未公开发布 npm 包。
+直接下载 [dsh-persona-memory-0.8.5-alpha.1.tgz](https://github.com/wuxingyu1231z/dsh-persona-memory/releases/download/v0.8.5-alpha.1/dsh-persona-memory-0.8.5-alpha.1.tgz)，或前往 [GitHub Releases](https://github.com/wuxingyu1231z/dsh-persona-memory/releases) 查看发布说明和校验文件。目前尚未公开发布 npm 包。
 
 **Desktop：**打开桌面应用的“插件”安装入口，填写 `.tgz` 文件的绝对路径，完成后完全退出并重新启动应用。
 
 **Web：**在运行 Harness Host 的机器上执行：
 
 ```bash
-dsh --profile web plugin add "/absolute/path/dsh-persona-memory-0.8.4-alpha.1.tgz"
+dsh --profile web plugin add "/absolute/path/dsh-persona-memory-0.8.5-alpha.1.tgz"
 ```
 
-也可以使用 Web 的“插件”安装入口。将示例替换为实际绝对路径；Windows 可使用 `C:/Downloads/dsh-persona-memory-0.8.4-alpha.1.tgz`。远程 Web 部署的安装路径指向 **Host 机器**，不是浏览器所在电脑。
+也可以使用 Web 的“插件”安装入口。将示例替换为实际绝对路径；Windows 可使用 `C:/Downloads/dsh-persona-memory-0.8.5-alpha.1.tgz`。远程 Web 部署的安装路径指向 **Host 机器**，不是浏览器所在电脑。
 
 如果通过 Harness 源码启动应用，可在 Harness 仓库中将 `dsh` 替换为 `pnpm dsh`。Web 与 Desktop 使用不同的 profile，需要分别安装。更多方式见[安装与分发说明](docs/DISTRIBUTION.md)。
 
 ### 从旧版升级
 
-安装 `0.8.4-alpha.1` 后，rc.3、rc.4、rc.5 使用同一个插件包；升级到后续 0.2.x 时也不会因版本号变化被直接拦截。安装后完全退出并重启 Harness。插件继续使用原来的 memory 目录；若插件页要求先卸载旧版，请保留本地数据。
+安装 `0.8.5-alpha.1` 后，rc.3、rc.4、rc.5 使用同一个插件包；升级到后续 0.2.x 时也不会因版本号变化被直接拦截。安装后完全退出并重启 Harness。插件继续使用原来的 memory 目录；若插件页要求先卸载旧版，请保留本地数据。
 
 | 插件版本 | 支持的 DSH |
 | --- | --- |
-| **`0.8.4-alpha.1`** | **`>=0.2.1-rc.3 <0.3.0-0`** |
+| **`0.8.5-alpha.1`** | **`>=0.2.1-rc.3 <0.3.0-0`** |
 
 开发接口固定在最低支持版本 rc.3；发布构建保持一份，并在 rc.3 / rc.4 / rc.5 上分别运行回归。启动时检查必要接口，遇到缺失能力会给出具体提示。范围内的未来版本允许安装，但尚未发布的版本无法预先保证行为；DSH 0.3.x 及以上需要另行适配。无需开启版本豁免。
 
@@ -108,7 +108,7 @@ npm run check
 npm pack --ignore-scripts --pack-destination releases
 ```
 
-安装生成的 `releases/dsh-persona-memory-0.8.4-alpha.1.tgz`，方式同上。源码仓库中的 `lib/` 和 `releases/` 不纳入 Git；直接安装本地目录前也必须先完成构建。未构建的 Git 仓库地址不能直接作为当前插件的安装包使用。
+安装生成的 `releases/dsh-persona-memory-0.8.5-alpha.1.tgz`，方式同上。源码仓库中的 `lib/` 和 `releases/` 不纳入 Git；直接安装本地目录前也必须先完成构建。未构建的 Git 仓库地址不能直接作为当前插件的安装包使用。
 
 ## 使用
 

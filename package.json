@@ -1,6 +1,6 @@
 {
   "name": "dsh-persona-memory",
-  "version": "0.8.4-alpha.1",
+  "version": "0.8.5-alpha.1",
   "description": "Local, persona-scoped memory for DeepSeek Harness Web and Desktop",
   "type": "module",
   "license": "MIT",

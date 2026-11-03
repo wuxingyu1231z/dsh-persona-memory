@@ -206,3 +206,52 @@ test('wrong counts, conflicting branch identities and cancellation leave no part
   await assert.rejects(manager.handle(source, { op: 'finishUpload', uploadId: started.batchId }, aborted.signal), /abort/i)
   assert.equal((await manager.list()).length, 0)
 })
+
+
+test('small UTF-8 upload chunks preserve long Chinese text, resume after a dropped reply and commit atomically', async t => {
+  const { uploadChunks } = await import('../src/import-upload.ts')
+  const { store, manager } = await fixture(t)
+  const content = '中文😀\n\t"\\'.repeat(25000)
+  const raw = JSON.stringify({ id: 'large-cn', messages: [{ role: 'user', content }] })
+  const texts = uploadChunks(raw)
+  assert.equal(texts.join(''), raw); assert.ok(texts.length > 4)
+  for (const text of texts) assert.ok(Buffer.byteLength(JSON.stringify(text)) <= 60000)
+  const start = await manager.handle(source, { op: 'beginUpload', filename: 'large.json', requestId: 'chunks-test', parts: 1, branches: 1 }, signal())
+  const request = (chunk: number) => ({ op: 'uploadChunk' as const, uploadId: start.batchId, index: 0, chunk, total: texts.length, format: 'json' as const, text: texts[chunk] })
+  await manager.handle(source, request(0), signal())
+  await assert.rejects(manager.handle(source, { ...request(0), text: 'conflicting' }, signal()), /内容发生变化/)
+  await assert.rejects(manager.handle(source, request(texts.length - 1), signal()), /缺失/)
+  assert.equal((await manager.list()).length, 0)
+  for (let i = 0; i < texts.length; i++) { await manager.handle(source, request(i), signal()); await manager.handle(source, request(i), signal()) }
+  const result = await manager.handle(source, { op: 'finishUpload', uploadId: start.batchId }, signal())
+  const batch = await store.readArtifact('imports', result.batchId, batchSchema)
+  assert.equal(batch!.conversations[0].messages[0].text, content)
+  assert.equal((await store.artifactIds('imports')).filter(id => id.startsWith('part-')).length, 0)
+})
+
+test('incremental extraction checkpoints both segments and reductions; each RPC runs at most one generation', async t => {
+  const { store } = await fixture(t)
+  let calls = 0
+  const generated = new Set<string>()
+  const make = () => new ImportManager(store, configSchema.parse({ importInputChars: 12000 }), async (_source, system, payload) => {
+    const key = JSON.stringify([system, payload]); assert.ok(!generated.has(key), 'completed model work must survive retries and manager restart')
+    generated.add(key); calls++
+    return JSON.stringify({ summary: `Summary ${calls}`, personaDraft: { name: '导师', description: '认真', prompt: '指导' }, topic: 'research', proposals: [] })
+  }, async () => { throw new Error('must not create a chat') })
+  let manager = make(); t.after(() => manager.stop())
+  const raw = JSON.stringify({ id: 'incremental', messages: Array.from({ length: 7 }, (_, i) => ({ id: `m-${i}`, role: 'user', content: String(i) + '科研'.repeat(2900) })) })
+  const preview = await manager.handle(source, { op: 'preview', filename: 'long.json', text: raw, format: 'json' }, signal())
+  let pending = preview.conversations.map(c => c.id), turns = 0
+  while (pending.length) {
+    const before = calls
+    const reply = await manager.handle(source, { op: 'analyze', batchId: preview.batchId, conversationIds: pending, incremental: true }, signal())
+    assert.ok(calls - before <= 1)
+    pending = reply.pendingAnalysisIds ?? []; assert.ok(++turns < 30)
+    if (turns === 3) { await manager.stop(); manager = make() }
+    if (!pending.length) assert.equal(reply.conversations[0].analysisReady, true)
+  }
+  assert.ok(calls > 7, 'multiple segments and merge levels were checkpointed')
+  const before = calls
+  await manager.handle(source, { op: 'analyze', batchId: preview.batchId, conversationIds: preview.conversations.map(c => c.id), incremental: true }, signal())
+  assert.equal(calls, before)
+})

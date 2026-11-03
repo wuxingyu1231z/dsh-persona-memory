@@ -1,4 +1,5 @@
 export const zh = {
+  analysisProgress: '正在分段提取，第', remainingBranches: '剩余分支', preparingUpload: '正在准备整包导入', committingUpload: '正在合并归档',
   continuationWorkspace: '续聊工作区', defaultWorkspace: '默认工作区', ungroupedWorkspace: '未分组', workspaceUnavailable: '原工作区已不可用，请重新选择', continuationDirectory: '工作目录', continuationWorkspaceHint: '决定新对话的分组和工作目录，不改变上方的记忆范围。', ungroupedWorkspaceHint: '使用 Harness 默认工作目录，不加入任何工作区分组。',
   choosePersona: '选择本会话的人格', selectedPersona: '已选中', savedMemories: '已新增或更新的记忆', automaticMemory: '模型会自动判断、保存和更新长期记忆，无需逐条确认。你可以随时纠正、忘掉或锁定。',
   persona: '人格', managePersona: '正在管理的人格', managementTabs: '管理分类', personaSettings: '人格与记忆管理',
@@ -36,6 +37,7 @@ export const zh = {
 }
 export type LocaleKey = keyof typeof zh
 export const en: Record<LocaleKey, string> = {
+  analysisProgress: 'Extracting, step', remainingBranches: 'Remaining branches', preparingUpload: 'Preparing whole-file import', committingUpload: 'Committing archive',
   continuationWorkspace: 'Workspace for the new chat', defaultWorkspace: 'Default workspace', ungroupedWorkspace: 'Ungrouped', workspaceUnavailable: 'Workspace unavailable. Choose another workspace.', continuationDirectory: 'Working directory', continuationWorkspaceHint: 'Sets the new chat’s group and working directory. The memory scope above stays unchanged.', ungroupedWorkspaceHint: 'Uses the Harness default directory without joining a workspace group.',
   choosePersona: 'Choose this chat’s persona', selectedPersona: 'Selected', savedMemories: 'Memories added or updated', automaticMemory: 'The model judges, saves and updates durable memories automatically. You can correct, forget or lock them at any time.',
   persona: 'Persona', managePersona: 'Persona to manage', managementTabs: 'Management sections', personaSettings: 'Personas & memories',
