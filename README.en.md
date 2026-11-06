@@ -74,27 +74,27 @@ There are no install-time scripts. Normal use does not require a separate databa
 
 ### Install a release archive
 
-Download [dsh-persona-memory-0.8.5-alpha.1.tgz](https://github.com/wuxingyu1231z/dsh-persona-memory/releases/download/v0.8.5-alpha.1/dsh-persona-memory-0.8.5-alpha.1.tgz) directly, or visit [GitHub Releases](https://github.com/wuxingyu1231z/dsh-persona-memory/releases) for release notes and checksums. The package has not been publicly published to npm.
+Download [dsh-persona-memory-0.8.6-alpha.1.tgz](https://github.com/wuxingyu1231z/dsh-persona-memory/releases/download/v0.8.6-alpha.1/dsh-persona-memory-0.8.6-alpha.1.tgz) directly, or visit [GitHub Releases](https://github.com/wuxingyu1231z/dsh-persona-memory/releases) for release notes and checksums. The package has not been publicly published to npm.
 
 **Desktop:** open the application’s Plugins installer, enter the absolute path to the `.tgz`, then fully quit and restart the application.
 
 **Web:** on the machine running the Harness Host, execute:
 
 ```bash
-dsh --profile web plugin add "/absolute/path/dsh-persona-memory-0.8.5-alpha.1.tgz"
+dsh --profile web plugin add "/absolute/path/dsh-persona-memory-0.8.6-alpha.1.tgz"
 ```
 
-The Web Plugins installer is also supported. Replace the example with the actual absolute path; Windows paths such as `C:/Downloads/dsh-persona-memory-0.8.5-alpha.1.tgz` work as well. In a remote Web deployment, the install path refers to the **Host machine**, not the browser’s computer.
+The Web Plugins installer is also supported. Replace the example with the actual absolute path; Windows paths such as `C:/Downloads/dsh-persona-memory-0.8.6-alpha.1.tgz` work as well. In a remote Web deployment, the install path refers to the **Host machine**, not the browser’s computer.
 
 When running Harness from source, use `pnpm dsh` from its repository instead of `dsh`. Web and Desktop use separate profiles and need separate installations. See the [installation and distribution guide](docs/DISTRIBUTION.md) for details; the extended guides are currently in Chinese.
 
 ### Upgrade from an earlier release
 
-Install `0.8.5-alpha.1` once for rc.3, rc.4, and rc.5. Later 0.2.x updates are also allowed without an exact-version installation block. Fully quit and restart Harness after installing. The existing memory directory is reused; if the installer requires removing the old plugin first, retain local data.
+Install `0.8.6-alpha.1` once for rc.3, rc.4, and rc.5. Later 0.2.x updates are also allowed without an exact-version installation block. Fully quit and restart Harness after installing. The existing memory directory is reused; if the installer requires removing the old plugin first, retain local data.
 
 | Plugin release | Supported DSH |
 | --- | --- |
-| **`0.8.5-alpha.1`** | **`>=0.2.1-rc.3 <0.3.0-0`** |
+| **`0.8.6-alpha.1`** | **`>=0.2.1-rc.3 <0.3.0-0`** |
 
 Development APIs stay pinned to the minimum supported rc.3 baseline. A single build is exercised on rc.3 / rc.4 / rc.5, and startup checks identify missing required interfaces. Future versions within the range are allowed to install, although unreleased behavior cannot be verified in advance. DSH 0.3.x and later need separate adaptation. No version exemption is required.
 
@@ -108,7 +108,7 @@ npm run check
 npm pack --ignore-scripts --pack-destination releases
 ```
 
-Install the resulting `releases/dsh-persona-memory-0.8.5-alpha.1.tgz` using the steps above. Generated `lib/` and `releases/` directories are not tracked in Git. Installing a local source directory also requires a build first; an unbuilt Git repository URL is not a supported installable artifact.
+Install the resulting `releases/dsh-persona-memory-0.8.6-alpha.1.tgz` using the steps above. Generated `lib/` and `releases/` directories are not tracked in Git. Installing a local source directory also requires a build first; an unbuilt Git repository URL is not a supported installable artifact.
 
 ## Usage
 

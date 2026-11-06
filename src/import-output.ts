@@ -1,7 +1,7 @@
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 
 export class ImportOutputError extends Error {
-  constructor(readonly kind: 'empty' | 'truncated' | 'incomplete' | 'format', message: string) { super(message); this.name = 'ImportOutputError' }
+  constructor(readonly kind: 'empty' | 'truncated' | 'incomplete' | 'format' | 'schema' | 'limit', message: string, readonly feedback = '') { super(message); this.name = 'ImportOutputError' }
 }
 
 /** DSH normalizes provider failures into finish chunks; never parse those as JSON. */
@@ -11,7 +11,7 @@ export async function readImportOutput(stream: AsyncIterable<StreamChunk>, signa
     signal.throwIfAborted()
     if (chunk.type === 'text-delta') blocks.set(chunk.index, (blocks.get(chunk.index) ?? '') + chunk.text)
     if (chunk.type === 'block-end' && chunk.block.type === 'text') blocks.set(chunk.index, chunk.block.text)
-    if ([...blocks.values()].reduce((n, text) => n + text.length, 0) > 64000) throw new Error('历史提取输出超过 64,000 字符，未保存结果。请减小单次输入预算。')
+    if ([...blocks.values()].reduce((n, text) => n + text.length, 0) > 64000) throw new ImportOutputError('limit', '历史提取输出超过 64,000 字符，未保存本段结果。')
     if (chunk.type !== 'finish') continue
     finished = true
     switch (chunk.reason.kind) {

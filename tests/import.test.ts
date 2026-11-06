@@ -211,3 +211,29 @@ test('repeated empty responses report a bounded diagnostic while retaining all i
   assert.equal(saved!.conversations[0].analysis, null); assert.equal(saved!.conversations[0].parts.length, 0)
   assert.equal(saved!.conversations[0].messages[0].text, '以后先给结论')
 })
+
+
+test('analysis parser accepts presentation wrappers and distinguishes syntax from schema without exposing content', async () => {
+  const { parseImportAnalysis } = await import('../src/import-analysis.ts')
+  const expected = analysis([]), json = JSON.stringify(expected)
+  for (const text of [json, '\uFEFF' + json, '```JSON\n' + json + '\n```', 'Result:\n' + json + '\nEnd.']) assert.deepEqual(parseImportAnalysis(text), expected)
+  const braces = { ...expected, summary: 'literal } { and \"quoted\" and backslash \\' }
+  assert.deepEqual(parseImportAnalysis('Answer:\n' + JSON.stringify(braces)), braces)
+  for (const text of [json + json, '{"summary":', '{"summary":"secret-value",}', '```json\n{"summary":']) assert.throws(() => parseImportAnalysis(text), e => e instanceof ImportOutputError && e.kind === 'format' && !e.message.includes('secret-value'))
+  assert.throws(() => parseImportAnalysis(JSON.stringify({ ...expected, topic: 'private-secret' })), e => e instanceof ImportOutputError && e.kind === 'schema' && /topic/.test(e.message) && !e.message.includes('private-secret'))
+  assert.throws(() => parseImportAnalysis('{}'), e => e instanceof ImportOutputError && e.kind === 'schema')
+})
+
+test('schema retry receives field-specific feedback and output contract contains valid JSON examples', async t => {
+  const { store } = await fixture(t); let retrySystem = ''
+  const manager = new ImportManager(store, configSchema.parse({}), async (_a, system, _p, _signal, attempt) => {
+    if (attempt === 0) return JSON.stringify({ ...analysis([]), topic: 'PRIVATE-UNKNOWN-TOPIC' })
+    retrySystem = system; return JSON.stringify(analysis([]))
+  }, async () => '')
+  const preview = await manager.handle(fakeAgent, { op: 'preview', filename: 'schema.json', text: json(), format: 'json' }, signal())
+  const result = await manager.handle(fakeAgent, { op: 'analyze', batchId: preview.batchId, conversationIds: [preview.conversations[0].id] }, signal())
+  assert.ok(result.conversations[0].analysisReady)
+  assert.match(retrySystem, /Fix these schema fields: topic/); assert.doesNotMatch(retrySystem, /PRIVATE-UNKNOWN-TOPIC/)
+  const example = /Example with no reliable memories: (.*)\.\n/.exec(retrySystem)![1]
+  assert.ok(JSON.parse(example).personaDraft)
+})

@@ -255,3 +255,33 @@ test('incremental extraction checkpoints both segments and reductions; each RPC 
   await manager.handle(source, { op: 'analyze', batchId: preview.batchId, conversationIds: preview.conversations.map(c => c.id), incremental: true }, signal())
   assert.equal(calls, before)
 })
+
+
+test('repeated invalid long-segment responses automatically shrink input and checkpoint successful children across restart', async t => {
+  const { store } = await fixture(t)
+  let calls = 0, failures = 0
+  const completed: string[] = []
+  const make = () => new ImportManager(store, configSchema.parse({ importInputChars: 12000 }), async (_source, _system, payload) => {
+    calls++
+    const messages = (payload as { messages?: { text: string }[] }).messages
+    if (messages && JSON.stringify(messages).length > 4000) { failures++; return '{"summary":' }
+    if (messages) completed.push(...messages.map(m => m.text))
+    return JSON.stringify({ summary: 'summary', personaDraft: { name: '导师', description: '', prompt: '指导' }, topic: 'research', proposals: [] })
+  }, async () => '')
+  let manager = make(); t.after(() => manager.stop())
+  const content = Array.from({ length: 1600 }, (_, i) => `原始正文${i}。`).join('')
+  const preview = await manager.handle(source, { op: 'preview', filename: 'adaptive.json', text: JSON.stringify({ id: 'adaptive', messages: [{ role: 'user', content }] }), format: 'json' }, signal())
+  let pending = preview.conversations.map(c => c.id), turns = 0
+  while (pending.length) {
+    const result = await manager.handle(source, { op: 'analyze', batchId: preview.batchId, conversationIds: pending, incremental: true }, signal())
+    pending = result.pendingAnalysisIds ?? []; assert.ok(++turns < 60)
+    if (turns === 4) { await manager.stop(); manager = make() }
+  }
+  assert.ok(failures >= 2); assert.equal(completed.join(''), content)
+  const saved = await store.readArtifact('imports', preview.batchId, batchSchema)
+  assert.equal(saved!.conversations[0].messages[0].text, content)
+  assert.ok(saved!.conversations[0].analysis)
+  const before = calls
+  await manager.handle(source, { op: 'analyze', batchId: preview.batchId, conversationIds: preview.conversations.map(c => c.id), incremental: true }, signal())
+  assert.equal(calls, before)
+})
